@@ -239,15 +239,6 @@ async function showStatus() {
       <h3 class="sec-h">This instance</h3>
       <dl class="kv">
         <dt>Database</dt><dd>${esc(h.data_dir)}</dd>
-        <dt>Domain pack</dt><dd>
-          <select id="pack-pick">${(state.domain?.packs || []).map((pk) =>
-            `<option value="${esc(pk.name)}" ${pk.name === h.domain.name ? 'selected' : ''}
-              >${esc(pk.label)}</option>`).join('')}</select>
-          <button class="mini-btn" id="btn-pack">Switch</button>
-          <div class="field-note">Switching changes the facets this feed
-            offers. Items keep the labels they were filed with until you
-            re-file them (<code>agentfeed enrich --refile-all</code>).</div>
-        </dd>
         <dt>Facets</dt><dd>${h.domain.facets.map((f) => esc(f.key)).join(', ')}</dd>
         <dt>Feed id</dt><dd>${esc(h.feed.id)}</dd>
       </dl>
@@ -700,7 +691,7 @@ async function loadLanguages() {
 
 async function boot0() {
   const h = await api('/api/health');
-  $('#domain-label').textContent = `${h.domain.label} · ${h.counts.items} items`;
+  $('#domain-label').textContent = `${h.counts.items} items`;
   $('#afp-text').textContent = `agentfeed/0.1 · ${h.counts.subscriptions} subs`;
   return h;
 }
@@ -708,7 +699,7 @@ async function boot0() {
 async function boot() {
   const h = await api('/api/health');
   state.domain = h.domain;
-  $('#domain-label').textContent = `${h.domain.label} · ${h.counts.items} items`;
+  $('#domain-label').textContent = `${h.counts.items} items`;
   $('#afp-text').textContent = `agentfeed/0.1 · ${h.counts.subscriptions} subs`;
   const d = await api('/api/domain');
   state.domain = d;
@@ -1716,18 +1707,6 @@ async function handleClick(e) {
   if (e.target.closest('#btn-agents')) {
     $$('.nav-item').forEach((n) => n.classList.remove('active'));
     return showSubscriptions();
-  }
-  if (e.target.closest('#btn-pack')) {
-    const name = $('#pack-pick').value;
-    if (!confirm(`Switch this feed to the "${name}" pack?`)) return;
-    const r = await api('/api/domain', { method: 'POST', body: { name } });
-    toast(r.note || 'Switched', 8000);
-    state.filters = {};
-    state.domain = await api('/api/domain');
-    renderFacetNav(state.domain);
-    await boot0();
-    await loadList();
-    return showStatus();
   }
 
   const tgl = e.target.closest('[data-toggle-src]');
