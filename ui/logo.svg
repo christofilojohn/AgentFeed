@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="96" viewBox="0 0 440 96" role="img" aria-label="AgentFeed">
+  <!-- Mark: the RSS signal, its origin a node rather than a dot. -->
+  <rect width="96" height="96" rx="22" fill="#12100E"/>
+  <g fill="none" stroke="#FF8C1A" stroke-width="10" stroke-linecap="round">
+    <path d="M18 44a26 26 0 0 1 26 26"/>
+    <path d="M18 24a46 46 0 0 1 46 46"/>
+  </g>
+  <rect x="18" y="64" width="14" height="14" rx="3.5" fill="#FF8C1A"/>
+  <!-- Wordmark. Two tones: the noun in ink, the thing it is in orange. -->
+  <text x="120" y="62" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="50" font-weight="650" letter-spacing="-1.5" fill="#12100E">Agent<tspan fill="#FF8C1A">Feed</tspan></text>
+</svg>

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentFeed</title>
+<link rel="icon" type="image/svg+xml" href="/static/mark.svg">
+<style>
+  :root { color-scheme: dark; --bg: #12100e; --panel: #1b1815; --line: #2e2a25;
+    --ink: #f3efe9; --soft: #b7b0a6; --faint: #7d766d; --orange: #ff8c1a;
+    --ok: #4fc17f; --warn: #e0a02a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 -apple-system, "Segoe UI", system-ui, sans-serif;
+    display: grid; place-items: center; min-height: 100vh; }
+  main { width: min(640px, 92vw); padding: 36px 0 48px; }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .brand img { width: 44px; height: 44px; border-radius: 10px; }
+  .brand b { font-size: 22px; letter-spacing: -.01em; }
+  .brand span { display: block; color: var(--faint); font-size: 12.5px; }
+  h1 { font-size: 26px; line-height: 1.2; margin: 0 0 8px; letter-spacing: -.01em; }
+  .lede { color: var(--soft); margin: 0 0 22px; }
+  .status { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+    margin-bottom: 20px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--faint);
+    flex: none; }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 0 4px rgba(79,193,127,.15); }
+  .dot.wait { background: var(--warn); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .dot.wait { animation: none; } }
+  .status b { display: block; font-size: 14px; }
+  .status span { color: var(--soft); font-size: 13px; }
+  .ways { display: grid; gap: 10px; margin: 0 0 20px; }
+  .way { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+    background: var(--panel); }
+  .way h3 { margin: 0 0 4px; font-size: 14.5px; }
+  .way p { margin: 0 0 8px; color: var(--soft); font-size: 13.5px; }
+  code, pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; }
+  pre { margin: 6px 0 0; padding: 9px 11px; background: #0d0b09; border-radius: 7px;
+    color: #e6e0d6; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input { flex: 1; min-width: 220px; background: #0d0b09; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; font: inherit;
+    font-size: 13.5px; }
+  button { font: inherit; font-size: 13.5px; padding: 8px 14px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    cursor: pointer; }
+  button.primary { background: var(--orange); border-color: var(--orange); color: #12100e;
+    font-weight: 600; }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+  .actions { display: flex; gap: 10px; align-items: center; margin-top: 6px; }
+  .fine { color: var(--faint); font-size: 12.5px; margin-top: 16px; }
+  .fine a { color: var(--soft); }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <img src="/static/mark.svg" alt="">
+    <div><b>AgentFeed</b><span>a news reader and protocol, with a local model behind it</span></div>
+  </div>
+
+  <h1>It needs a model to read with.</h1>
+  <p class="lede">Everything AgentFeed does — filing, abstracts, judging what belongs
+    in a topic, answering questions — runs on an open-weight model on your own machine
+    or on a server you point it at. Nothing leaves the machine otherwise.</p>
+
+  <div class="status" id="status">
+    <div class="dot wait" id="dot"></div>
+    <div><b id="st-title">Looking for a model server…</b>
+      <span id="st-detail">Checking Ollama, LM Studio, llama.cpp, vLLM and NIM on their usual ports.</span></div>
+  </div>
+
+  <div class="ways" id="ways">
+    <div class="way">
+      <h3>1 · Run one here</h3>
+      <p>Easiest. Install Ollama, pull a model, and this page will notice on its own.</p>
+      <pre id="hint-install">…</pre>
+      <pre id="hint-pull">ollama pull qwen3:8b
+ollama pull nomic-embed-text</pre>
+      <p style="margin-top:8px">Already have <b>LM Studio</b>? Load a model and start its
+        server (the ↔ tab). Same thing, it is found automatically.</p>
+    </div>
+    <div class="way">
+      <h3>2 · Or point it at a server</h3>
+      <p>Anything that speaks the OpenAI-compatible API: a bigger machine on your
+        network, an NVIDIA NIM container, a hosted endpoint.</p>
+      <div class="row">
+        <input id="url" placeholder="http://192.168.1.20:11434/v1" spellcheck="false">
+        <button id="connect">Connect</button>
+      </div>
+      <p id="connect-out" style="margin:8px 0 0;font-size:13px"></p>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="continue" disabled>Open the dashboard</button>
+    <button id="retry">Check again</button>
+    <span id="skip" style="color:var(--faint);font-size:12.5px">— or —
+      <a href="/" style="color:var(--soft)">open it anyway</a> (reading works, nothing new gets filed)</span>
+  </div>
+
+  <p class="fine">Which model? A MoE like <code>qwen3:30b-a3b</code> reads at 30B quality
+    on a laptop with 32 GB; <code>qwen3:8b</code> fits 16 GB. Set a 32k context —
+    <code>OLLAMA_CONTEXT_LENGTH=32768</code> — or whole articles are silently cut.</p>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let ready = false, timer = null, checks = 0;
+const stay = new URLSearchParams(location.search).has('stay');
+
+// Two different first minutes. A machine that is already set up should not
+// see this page at all -- it flashed "Connected" for two seconds and left,
+// which reads as a glitch. A machine that had to be set up should see
+// "Connected" and choose to continue, not have the page vanish mid-read.
+async function check() {
+  checks += 1;
+  try {
+    const [h, opts] = await Promise.all([
+      fetch('/api/health').then((r) => r.json()),
+      fetch('/api/llm/options').then((r) => r.json()),
+    ]);
+    $('#hint-install').textContent = opts.install || 'https://ollama.com/download';
+    const llm = h.llm || {};
+    if (llm.ok) {
+      ready = true;
+      $('#dot').className = 'dot ok';
+      $('#st-title').textContent = `Connected to ${llm.provider_label || 'a model server'}`;
+      $('#st-detail').textContent =
+        `${llm.chat_model || 'model'} · ${llm.embed_loaded ? 'embeddings on' : 'no embeddings yet'} · ${llm.base_url || ''}`;
+      $('#continue').disabled = false;
+      $('#skip').hidden = true;
+      clearInterval(timer);
+      if (!stay && checks === 1) {
+        // Already set up: straight through, no flash.
+        location.replace('/');
+        return;
+      }
+      // Set up just now: say so, and let the person click through.
+      $('#st-title').textContent = `Connected to ${llm.provider_label || 'a model server'} — you are set`;
+      $('#continue').focus();
+    } else {
+      $('#dot').className = 'dot wait';
+      $('#st-title').textContent = 'No model server is answering yet';
+      $('#st-detail').textContent = (llm.error || '').slice(0, 160) ||
+        'Start one of the runtimes below and this page will notice.';
+    }
+  } catch (e) {
+    $('#st-title').textContent = 'Starting up…';
+  }
+}
+
+$('#retry').addEventListener('click', check);
+$('#continue').addEventListener('click', () => { location.href = '/'; });
+$('#connect').addEventListener('click', async () => {
+  const base_url = $('#url').value.trim();
+  if (!base_url) return;
+  $('#connect-out').textContent = 'trying…';
+  const r = await fetch('/api/llm/connect', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base_url }) })
+    .then((x) => x.json());
+  $('#connect-out').style.color = r.ok ? 'var(--ok)' : 'var(--warn)';
+  $('#connect-out').textContent = r.ok
+    ? `Connected — ${r.chat_model || 'model found'}. Saved for next time.`
+    : (r.reason || 'Nothing answered at that address.');
+  if (r.ok) check();
+});
+
+check();
+timer = setInterval(check, 4000);
+</script>
+</body>
+</html>

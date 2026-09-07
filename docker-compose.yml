@@ -1,0 +1,38 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+    environment:
+      # Whole articles do not fit in the default window, and the runtime
+      # truncates silently rather than complaining.
+      OLLAMA_CONTEXT_LENGTH: "32768"
+
+  # One-shot: pull the models, then exit. Without this, `docker compose up`
+  # produced a dashboard that could fetch but never file anything, and the
+  # only hint was a 404 from the model server buried in the logs.
+  models:
+    image: ollama/ollama:latest
+    depends_on: [ollama]
+    volumes: ["ollama:/root/.ollama"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: >
+      sh -c "ollama pull ${AGENTFEED_MODEL:-qwen3:8b}
+             && ollama pull nomic-embed-text"
+    restart: "no"
+
+  agentfeed:
+    build: .
+    depends_on:
+      ollama: { condition: service_started }
+      models: { condition: service_completed_successfully }
+    ports: ["8770:8770"]
+    volumes: ["agentfeed:/data"]
+    environment:
+      AGENTFEED_LLM_BASE_URL: http://ollama:11434/v1
+      AGENTFEED_DOMAIN: generic
+
+volumes:
+  ollama:
+  agentfeed:

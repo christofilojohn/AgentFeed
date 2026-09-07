@@ -1,0 +1,138 @@
+name = "markets"
+label = "Markets & trading intelligence"
+description = """
+Company, sector and macro news filed for market relevance: what happened, to
+whom, and what it is evidence of. Feeds the signals layer.
+
+This pack organises information. It does not produce investment advice, and
+nothing derived from it should be treated as a recommendation.
+"""
+analyst_role = "a markets research analyst"
+audience = "an analyst who needs the facts and their provenance, not a view"
+item_types = ["news", "earnings", "regulatory", "research", "market_report", "company_release", "commentary", "other"]
+
+[facets.sector]
+label = "Sectors"
+key = "sectors"
+primary = true
+icon = "grid"
+
+[facets.sector.terms.technology]
+label = "Technology"
+aliases = ["semiconductor", "software", "cloud", "artificial intelligence", "data centre", "data center", "chipmaker"]
+
+[facets.sector.terms.energy]
+label = "Energy"
+aliases = ["oil", "crude", "natural gas", "lng", "refinery", "opec", "drilling"]
+
+[facets.sector.terms.financials]
+label = "Financials"
+aliases = ["bank", "insurer", "lender", "central bank", "basel", "capital ratio"]
+
+[facets.sector.terms.healthcare]
+label = "Healthcare & pharma"
+aliases = ["pharmaceutical", "biotech", "fda approval", "clinical trial", "drugmaker"]
+
+[facets.sector.terms.industrials]
+label = "Industrials"
+aliases = ["manufacturing", "aerospace", "defence contractor", "machinery", "construction"]
+
+[facets.sector.terms.consumer]
+label = "Consumer"
+aliases = ["retailer", "consumer goods", "e-commerce", "same-store sales", "footfall"]
+
+[facets.sector.terms.materials]
+label = "Materials & commodities"
+aliases = ["mining", "copper", "lithium", "steel", "fertiliser", "wheat", "iron ore"]
+
+[facets.sector.terms.shipping]
+label = "Shipping & logistics"
+aliases = ["freight rate", "container", "tanker", "dry bulk", "port congestion", "baltic dry"]
+
+[facets.sector.terms.utilities]
+label = "Utilities & power"
+aliases = ["grid operator", "power price", "electricity market", "transmission"]
+
+[facets.sector.terms.real_estate]
+label = "Real estate"
+aliases = ["reit", "commercial property", "housing starts", "mortgage rate"]
+
+[facets.event]
+label = "Event type"
+key = "events"
+icon = "bolt"
+
+[facets.event.terms.earnings]
+label = "Earnings & guidance"
+aliases = ["quarterly results", "earnings per share", "guidance", "profit warning", "beat expectations", "missed estimates", "ebitda"]
+
+[facets.event.terms.mna]
+label = "M&A and deals"
+aliases = ["acquisition", "merger", "takeover", "joint venture", "divestment", "stake sale", "buyout"]
+
+[facets.event.terms.regulatory]
+label = "Regulatory & legal"
+aliases = ["antitrust", "investigation", "fine", "lawsuit", "settlement", "approval", "licence revoked", "sanctions"]
+
+[facets.event.terms.supply]
+label = "Supply & production"
+aliases = ["production halt", "capacity expansion", "shortage", "output cut", "plant closure", "recall", "strike"]
+
+[facets.event.terms.macro]
+label = "Macro & policy"
+aliases = ["interest rate", "inflation", "cpi", "unemployment", "gdp", "tariff", "central bank", "rate cut", "rate hike"]
+
+[facets.event.terms.leadership]
+label = "Leadership & governance"
+aliases = ["chief executive", "ceo steps down", "resigns", "appointed", "board", "activist investor"]
+
+[facets.event.terms.credit]
+label = "Credit & financing"
+aliases = ["credit rating", "downgrade", "upgrade", "bond issue", "refinancing", "default", "bankruptcy", "chapter 11"]
+
+[facets.event.terms.demand]
+label = "Demand & pricing"
+aliases = ["price increase", "price cut", "demand weakness", "order book", "backlog", "market share"]
+
+[facets.region]
+label = "Regions"
+key = "regions"
+icon = "globe"
+
+[facets.region.terms.north_america]
+label = "North America"
+aliases = ["united states", "usa", "u.s.", "canada", "mexico", "nasdaq", "nyse"]
+
+[facets.region.terms.europe]
+label = "Europe"
+aliases = ["european union", "germany", "france", "united kingdom", "ftse", "dax", "cac", "euro area", "ecb"]
+
+[facets.region.terms.asia_pacific]
+label = "Asia-Pacific"
+aliases = ["china", "japan", "korea", "taiwan", "india", "hong kong", "nikkei", "hang seng", "shanghai"]
+
+[facets.region.terms.emerging]
+label = "Emerging markets"
+aliases = ["brazil", "mexico", "south africa", "turkey", "indonesia", "emerging market"]
+
+[facets.region.terms.global]
+label = "Global"
+aliases = ["global", "worldwide", "international"]
+
+[organisations]
+exclusive_groups = []
+exclusive_ids = []
+
+[relevance]
+strong = [
+  "earnings", "quarterly results", "guidance", "acquisition", "merger",
+  "share price", "stock price", "shareholders", "market capitalisation",
+  "revenue", "profit", "operating margin", "free cash flow", "dividend",
+  "analyst", "investors", "trading volume", "bond yield", "interest rate",
+  "inflation", "central bank", "commodity price", "futures contract",
+  "supply chain", "production capacity", "order book", "credit rating",
+]
+weak = [
+  "company", "industry", "sector", "growth", "demand", "price", "contract",
+  "regulator", "government", "report", "forecast",
+]

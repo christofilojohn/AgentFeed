@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentFeed</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" type="image/svg+xml" href="/static/mark.svg">
+<!-- The whole point, in one tag: an agent that crawls this page finds the
+     feed the same way a reader's RSS client used to. -->
+<link rel="alternate" type="application/agentfeed+json"
+      href="/.well-known/agent-feed" title="Agent Feed">
+</head>
+<body>
+<div id="app">
+
+  <aside id="sidebar">
+    <div class="side-head">
+      <div class="brand"><img class="brand-mark" src="/static/mark.svg" width="22" height="22" alt=""> AgentFeed</div>
+      <div class="tagline" id="domain-label">—</div>
+    </div>
+
+    <div class="side-actions">
+      <button id="btn-refresh" class="primary-btn">Fetch new</button>
+      <div class="add-inline">
+        <input id="add-site" placeholder="Add a source: paste a name or URL">
+        <button id="btn-add-site" class="mini-btn">Add</button>
+      </div>
+      <div id="add-out" class="dim"></div>
+    </div>
+
+    <nav id="nav" class="scroll">
+      <section class="nav-group">
+        <h3 class="nav-title">Topics <button id="btn-new-topic" class="tiny-btn" title="New topic">+</button></h3>
+        <div class="nav-body" id="topic-list"></div>
+      </section>
+
+      <section class="nav-group">
+        <h3 class="nav-title">Saved <button id="btn-new-collection" class="tiny-btn" title="New collection">+</button></h3>
+        <div class="nav-body" id="collection-list"></div>
+      </section>
+
+      <section class="nav-group">
+        <h3 class="nav-title">Everything</h3>
+        <div class="nav-body">
+          <div class="nav-item active" data-view="latest"><span class="nav-label">Latest</span></div>
+          <div class="nav-item" data-view="top"><span class="nav-label">Highest impact</span></div>
+        </div>
+      </section>
+      <!-- Facets are power-user filtering: available, collapsed, not in the
+           way of the three things people actually came for. -->
+      <div id="facet-groups"></div>
+    </nav>
+
+    <div class="side-foot">
+      <div id="afp-pill" class="afp-pill" title="Agent Feed Protocol endpoint">
+        <span class="dot ok"></span><span id="afp-text">agentfeed/0.1</span>
+      </div>
+      <div class="foot-row">
+        <button id="btn-sources" class="foot-btn">Sources</button>
+        <button id="btn-signals" class="foot-btn">Signals</button>
+        <button id="btn-agents" class="foot-btn">Agents</button>
+        <button id="btn-status" class="foot-btn">Status</button>
+      </div>
+    </div>
+  </aside>
+
+  <section id="list-col">
+    <header class="col-head">
+      <div class="search-wrap">
+        <input id="search" type="search" placeholder="Search the corpus…" autocomplete="off">
+      </div>
+      <select id="rendition" title="Detail level">
+        <option value="brief">Brief</option>
+        <option value="headline">Headlines</option>
+        <option value="full">Expanded</option>
+      </select>
+    </header>
+    <div id="filter-bar" class="filter-bar hidden"></div>
+    <div id="list-meta" class="col-sub"></div>
+    <div id="list" class="scroll"></div>
+  </section>
+
+  <section id="reader-col">
+    <header class="col-head reader-head">
+      <div id="reader-actions" class="hidden">
+        <a class="icon-btn" id="btn-open" target="_blank" title="Open original">↗</a>
+        <button class="icon-btn" id="btn-star" title="Save to Favourites">☆</button>
+        <button class="icon-btn" id="btn-save-to" title="Save to a collection…">＋</button>
+        <button class="icon-btn" id="btn-drop" title="Not relevant — remove it">✕</button>
+        <button class="icon-btn" id="btn-orig" title="Show original language">文</button>
+      </div>
+      <div class="spacer"></div>
+      <label class="lang-pick" title="Read abstracts in this language">
+        <select id="reader-lang"></select>
+      </label>
+      <button id="btn-signal" class="pill-btn">Analyse coverage</button>
+    </header>
+    <div id="reader" class="scroll">
+      <div class="empty-state">
+        <div class="empty-mark">⇶</div>
+        <p>Select an item, or open a view.</p>
+      </div>
+    </div>
+  </section>
+
+  <div id="modal" class="hidden">
+    <div class="modal-card">
+      <header class="modal-head">
+        <strong id="modal-title">·</strong>
+        <button id="modal-close" class="icon-btn">✕</button>
+      </header>
+      <div id="modal-body" class="scroll"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden"><div id="toast-text"></div></div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

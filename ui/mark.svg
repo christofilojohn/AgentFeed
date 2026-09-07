@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="AgentFeed">
+  <!-- The RSS signal, with one deliberate change: the origin is a node, not a dot.
+       A feed for agents starts from something that computes. -->
+  <rect width="96" height="96" rx="22" fill="#12100E"/>
+  <g fill="none" stroke="#FF8C1A" stroke-width="10" stroke-linecap="round">
+    <path d="M18 44a26 26 0 0 1 26 26"/>
+    <path d="M18 24a46 46 0 0 1 46 46"/>
+  </g>
+  <rect x="18" y="64" width="14" height="14" rx="3.5" fill="#FF8C1A"/>
+</svg>

@@ -1,0 +1,101 @@
+name: release
+
+# Push a tag like v0.1.0 and this builds the desktop app on a Mac and a
+# Windows runner, zips each, and publishes them on a GitHub Release under
+# that tag. Nothing is built on a laptop and uploaded by hand; the artifact
+# is whatever the tagged commit produces.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: app · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            asset: AgentFeed-macos-arm64.zip
+          - os: windows-latest
+            asset: AgentFeed-windows-x64.zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - name: Build
+        shell: bash
+        run: |
+          uv venv --python 3.13
+          uv pip install -e '.[desktop]'
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            .venv/bin/pyinstaller --noconfirm --clean packaging/agentfeed.spec
+            ditto -c -k --keepParent dist/AgentFeed.app "dist/${{ matrix.asset }}"
+          else
+            .venv/Scripts/pyinstaller.exe --noconfirm --clean packaging/agentfeed.spec
+            cd dist && 7z a -tzip "${{ matrix.asset }}" AgentFeed
+          fi
+      # Signing and notarisation, only when the repository has the secrets.
+      # Without them the macOS zip is ad-hoc signed and needs right-click →
+      # Open the first time; with them it opens on a double-click anywhere.
+      #   MACOS_CERT_P12        base64 of the Developer ID Application .p12
+      #   MACOS_CERT_PASSWORD   its password
+      #   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarytool
+      - name: Sign and notarise
+        if: runner.os == 'macOS' && env.MACOS_CERT_P12 != ''
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          KC=$RUNNER_TEMP/sign.keychain-db
+          security create-keychain -p ci "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p ci "$KC"
+          echo "$MACOS_CERT_P12" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -P "$MACOS_CERT_PASSWORD" -k "$KC" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KC"
+          security list-keychains -d user -s "$KC" login.keychain-db
+          xcrun notarytool store-credentials agentfeed --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+          bash scripts/sign-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: assets, merge-multiple: true }
+      - name: List
+        run: ls -la assets
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*.zip
+          generate_release_notes: true
+          body: |
+            The desktop app, built from this tag by CI.
+
+            **macOS (Apple silicon):** unzip, move AgentFeed.app to Applications, open it.
+            Signed with a Developer ID and notarised by Apple when the release was made
+            with the signing secrets; otherwise, on first launch, right-click → Open, or
+            run `xattr -dr com.apple.quarantine /Applications/AgentFeed.app`.
+
+            **Windows (x64):** unzip and run `AgentFeed\AgentFeed.exe`. SmartScreen will
+            ask once because the binary is unsigned; choose *More info → Run anyway*.
+
+            Both open on a welcome page that finds a local model server (Ollama,
+            LM Studio, llama.cpp, vLLM, NVIDIA NIM) or lets you point at one.

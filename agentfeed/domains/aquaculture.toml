@@ -1,0 +1,714 @@
+name = "aquaculture"
+label = "Aquaculture health, science & markets"
+description = "Farmed fish and shellfish: disease, health management, vaccines, research and market data."
+analyst_role = "an aquaculture health intelligence analyst"
+audience = "a fish farmer, fish veterinarian or industry analyst"
+item_types = ["news", "research_paper", "preprint", "regulatory_notice", "market_report", "industry_post", "company_release", "other"]
+
+[facets.species]
+label = "Species"
+key = "species"
+primary = true
+icon = "fish"
+
+[facets.species.terms.atlantic_salmon]
+label = "Atlantic salmon"
+aliases = ["atlantic salmon", "salmo salar", "salmon", "salmonid", "post-smolt", "postsmolt", "smolt"]
+group = "salmonid"
+
+[facets.species.terms.rainbow_trout]
+label = "Rainbow trout"
+aliases = ["rainbow trout", "oncorhynchus mykiss", "trout", "steelhead", "sea trout", "brown trout", "salmo trutta"]
+group = "salmonid"
+
+[facets.species.terms.coho_chinook]
+label = "Pacific salmon (coho/chinook)"
+aliases = ["coho", "chinook", "oncorhynchus kisutch", "oncorhynchus tshawytscha", "pacific salmon", "sockeye"]
+group = "salmonid"
+
+[facets.species.terms.gilthead_seabream]
+label = "Gilthead seabream"
+aliases = ["gilthead", "sea bream", "seabream", "sparus aurata", "bream", "tsipoura"]
+group = "mediterranean"
+
+[facets.species.terms.european_seabass]
+label = "European seabass"
+aliases = ["sea bass", "seabass", "dicentrarchus labrax", "european bass", "lavraki", "labrax"]
+group = "mediterranean"
+
+[facets.species.terms.meagre_croaker]
+label = "Meagre / croaker"
+aliases = ["meagre", "argyrosomus regius", "croaker", "corvina"]
+group = "mediterranean"
+
+[facets.species.terms.turbot_sole]
+label = "Turbot / sole"
+aliases = ["turbot", "scophthalmus maximus", "sole", "solea solea", "senegalese sole"]
+group = "mediterranean"
+
+[facets.species.terms.nile_tilapia]
+label = "Tilapia"
+aliases = ["tilapia", "oreochromis niloticus", "oreochromis", "nile tilapia", "red tilapia", "genomar"]
+group = "warmwater"
+
+[facets.species.terms.common_carp]
+label = "Carp"
+aliases = ["common carp", "cyprinus carpio", "carp", "grass carp", "silver carp", "koi", "bighead carp", "ctenopharyngodon"]
+group = "warmwater"
+
+[facets.species.terms.catfish_pangasius]
+label = "Catfish / pangasius"
+aliases = ["pangasius", "basa", "tra fish", "channel catfish", "ictalurus punctatus", "clarias", "african catfish"]
+group = "warmwater"
+
+[facets.species.terms.shrimp]
+label = "Shrimp / prawn"
+aliases = ["shrimp", "penaeus vannamei", "litopenaeus", "whiteleg shrimp", "prawn", "penaeus monodon", "black tiger"]
+group = "crustacean"
+
+[facets.species.terms.yellowtail_amberjack]
+label = "Yellowtail / amberjack"
+aliases = ["yellowtail", "seriola", "amberjack", "kingfish", "hamachi"]
+group = "other_marine"
+
+[facets.species.terms.barramundi_cobia]
+label = "Barramundi / cobia"
+aliases = ["barramundi", "lates calcarifer", "cobia", "rachycentron"]
+group = "other_marine"
+
+[facets.species.terms.grouper_snapper]
+label = "Grouper / snapper"
+aliases = ["grouper", "epinephelus", "snapper", "lutjanus", "asian seabass"]
+group = "other_marine"
+
+[facets.species.terms.sturgeon]
+label = "Sturgeon"
+aliases = ["sturgeon", "acipenser", "beluga", "caviar"]
+group = "other"
+
+[facets.species.terms.bivalves]
+label = "Oyster / mussel / bivalve"
+aliases = ["oyster", "crassostrea", "mussel", "mytilus", "bivalve", "clam", "scallop"]
+group = "shellfish"
+
+[facets.species.terms.other_species]
+label = "Other / multi-species"
+group = "other"
+
+[facets.region]
+label = "Regions"
+key = "regions"
+icon = "globe"
+
+[facets.region.terms.norway]
+label = "Norway"
+aliases = ["norway", "norwegian", "norge", "trondelag", "nordland", "troms", "finnmark"]
+
+[facets.region.terms.scotland_uk]
+label = "Scotland & UK"
+aliases = ["scotland", "scottish", "united kingdom", "uk ", "shetland", "orkney", "hebrides", "england", "ireland", "irish"]
+
+[facets.region.terms.faroe_iceland]
+label = "Faroe Islands & Iceland"
+aliases = ["faroe", "faroese", "bakkafrost", "iceland", "icelandic"]
+
+[facets.region.terms.chile]
+label = "Chile"
+aliases = ["chile", "chilean", "los lagos", "aysen", "magallanes", "sernapesca"]
+
+[facets.region.terms.north_america]
+label = "North America"
+aliases = ["canada", "canadian", "british columbia", "new brunswick", "nova scotia", "united states", "usa", "u.s.", "maine", "alaska", "washington state", "mississippi", "idaho"]
+
+[facets.region.terms.greece]
+label = "Greece"
+aliases = ["greece", "greek", "hellenic", "aegean", "avramar", "selonda", "nireus", "philosofish"]
+
+[facets.region.terms.turkiye]
+label = "Türkiye"
+aliases = ["turkey", "turkish", "turkiye", "kilic", "izmir", "mugla", "bodrum"]
+
+[facets.region.terms.iberia]
+label = "Spain & Portugal"
+aliases = ["spain", "spanish", "portugal", "portuguese", "galicia", "andalusia", "canary islands"]
+
+[facets.region.terms.italy_adriatic]
+label = "Italy & Adriatic"
+aliases = ["italy", "italian", "croatia", "croatian", "adriatic", "slovenia", "montenegro"]
+
+[facets.region.terms.france_benelux]
+label = "France & Benelux"
+aliases = ["france", "french", "brittany", "netherlands", "dutch", "belgium", "denmark", "danish"]
+
+[facets.region.terms.egypt_mena]
+label = "Egypt & MENA"
+aliases = ["egypt", "egyptian", "nile delta", "kafr el-sheikh", "morocco", "tunisia", "saudi", "israel", "jordan", "oman"]
+
+[facets.region.terms.sub_saharan_africa]
+label = "Sub-Saharan Africa"
+aliases = ["nigeria", "ghana", "kenya", "uganda", "zambia", "malawi", "tanzania", "lake victoria", "south africa", "zimbabwe"]
+
+[facets.region.terms.china]
+label = "China"
+aliases = ["china", "chinese", "guangdong", "hainan", "fujian", "shandong", "yangtze"]
+
+[facets.region.terms.southeast_asia]
+label = "Southeast Asia"
+aliases = ["vietnam", "vietnamese", "mekong", "thailand", "thai", "indonesia", "indonesian", "philippines", "malaysia", "myanmar"]
+
+[facets.region.terms.south_asia]
+label = "South Asia"
+aliases = ["india", "indian", "andhra pradesh", "bangladesh", "west bengal", "sri lanka", "pakistan"]
+
+[facets.region.terms.east_asia_other]
+label = "Japan & Korea"
+aliases = ["japan", "japanese", "korea", "korean", "taiwan"]
+
+[facets.region.terms.latam_other]
+label = "Latin America (excl. Chile)"
+aliases = ["brazil", "brazilian", "ecuador", "mexico", "peru", "colombia", "honduras", "costa rica"]
+
+[facets.region.terms.oceania]
+label = "Australia & New Zealand"
+aliases = ["australia", "australian", "tasmania", "new zealand"]
+
+[facets.region.terms.global]
+label = "Global / multi-region"
+aliases = ["global", "worldwide", "international"]
+
+[facets.topic]
+label = "Topics"
+key = "topics"
+icon = "tag"
+
+[facets.topic.terms.disease_outbreak]
+label = "Disease outbreak & surveillance"
+aliases = ["outbreak", "mortality event", "epizootic", "notifiable", "wahis", "quarantine", "culled", "cull ", "die-off"]
+
+[facets.topic.terms.pathogen_biology]
+label = "Pathogen biology"
+aliases = ["virulence", "genotype", "serotype", "phylogenetic", "isolate", "strain", "genome"]
+
+[facets.topic.terms.health_management]
+label = "Health management & husbandry"
+aliases = ["fish health", "husbandry", "stocking density", "mitigation", "management strategy", "delousing", "cleaner fish", "lumpfish", "wrasse", "thermolicer", "freshwater bath"]
+
+[facets.topic.terms.biosecurity]
+label = "Biosecurity"
+aliases = ["biosecurity", "disinfection", "fallowing", "zoning", "compartmentalisation", "traceability"]
+
+[facets.topic.terms.vaccines]
+label = "Vaccines & immunoprophylaxis"
+aliases = ["vaccine", "vaccination", "immunisation", "immunization", "adjuvant", "autogenous", "dna vaccine", "mrna vaccine", "booster", "immersion vaccine", "oral vaccine"]
+
+[facets.topic.terms.treatments]
+label = "Treatments & therapeutics"
+aliases = ["antibiotic", "antimicrobial", "florfenicol", "oxytetracycline", "treatment", "therapeutic", "antiparasitic", "emamectin", "hydrogen peroxide", "azamethiphos", "phage therapy", "probiotic"]
+
+[facets.topic.terms.diagnostics]
+label = "Diagnostics & surveillance tech"
+aliases = ["diagnostic", "qpcr", "rt-pcr", "elisa", "biomarker", "assay", "surveillance", "edna", "lamp assay", "sequencing"]
+
+[facets.topic.terms.nutrition_immunity]
+label = "Nutrition & immune function"
+aliases = ["feed additive", "functional feed", "immunostimulant", "beta-glucan", "nutrition", "diet", "gut health", "microbiome"]
+
+[facets.topic.terms.genetics_breeding]
+label = "Genetics & selective breeding"
+aliases = ["selective breeding", "qtl", "genomic selection", "heritability", "resistant strain", "broodstock", "crispr", "gene editing"]
+
+[facets.topic.terms.welfare]
+label = "Welfare"
+aliases = ["welfare", "stress response", "cortisol", "humane slaughter", "operational welfare indicator"]
+
+[facets.topic.terms.regulation_policy]
+label = "Regulation & policy"
+aliases = ["regulation", "directive", "legislation", "licence", "license", "permit", "eu commission", "defra", "mattilsynet", "fda approval", "ema ", "policy"]
+
+[facets.topic.terms.market_prices]
+label = "Market & prices"
+aliases = ["price", "spot market", "nasdaq salmon index", "nqsalmon", "export value", "harvest volume", "supply", "demand", "tariff", "eur/kg", "nok/kg", "usd/kg"]
+
+[facets.topic.terms.company_business]
+label = "Company & business"
+aliases = ["acquisition", "merger", "quarterly results", "ebit", "investment", "ipo", "financing", "capacity expansion", "joint venture"]
+
+[facets.topic.terms.technology]
+label = "Technology & equipment"
+aliases = ["ras ", "recirculating aquaculture", "sensor", "machine learning", "artificial intelligence", "computer vision", "submersible", "offshore pen", "barge", "automation"]
+
+[facets.topic.terms.research_paper]
+label = "Peer-reviewed research"
+aliases = ["doi", "et al", "peer-reviewed", "preprint", "journal"]
+
+[facets.pathogen]
+label = "Pathogens"
+key = "pathogens"
+primary = true
+icon = "bug"
+
+[facets.pathogen.terms.sea_lice]
+label = "Sea Lice"
+aliases = ["sea lice", "sea louse", "lepeophtheirus salmonis", "caligus", "salmon louse", "lice count", "lakselus", "avlusing", "avlusning", "lusetelling", "termisk avlusing", "piojo de mar", "desparasitacion"]
+
+[facets.pathogen.terms.isav]
+label = "Isav"
+aliases = ["infectious salmon anaemia", "infectious salmon anemia", "isav", "isa virus", "ila-virus", "ila", "infeksios lakseanemi", "anemia infecciosa del salmon"]
+
+[facets.pathogen.terms.pd_sav]
+label = "Pd Sav"
+aliases = ["pancreas disease", "salmonid alphavirus", "sav2", "sav3", "pancreatic disease"]
+
+[facets.pathogen.terms.cms]
+label = "Cms"
+aliases = ["cardiomyopathy syndrome", "piscine myocarditis", "pmcv", "cms"]
+
+[facets.pathogen.terms.hsmi]
+label = "Hsmi"
+aliases = ["heart and skeletal muscle inflammation", "hsmi", "piscine orthoreovirus", "prv"]
+
+[facets.pathogen.terms.ipn]
+label = "Ipn"
+aliases = ["infectious pancreatic necrosis", "ipnv"]
+
+[facets.pathogen.terms.vhs]
+label = "Vhs"
+aliases = ["viral haemorrhagic septicaemia", "viral hemorrhagic septicemia", "vhsv"]
+
+[facets.pathogen.terms.ihn]
+label = "Ihn"
+aliases = ["infectious haematopoietic necrosis", "ihnv"]
+
+[facets.pathogen.terms.amoebic_gill]
+label = "Amoebic Gill"
+aliases = ["amoebic gill disease", "agd", "paramoeba perurans", "neoparamoeba", "amobisk gjellesykdom", "gjellesykdom", "gjelleproblemer"]
+
+[facets.pathogen.terms.winter_ulcer]
+label = "Winter Ulcer"
+aliases = ["winter ulcer", "moritella viscosa", "tenacibaculum", "tenacibaculosis"]
+
+[facets.pathogen.terms.yersiniosis]
+label = "Yersiniosis"
+aliases = ["yersinia ruckeri", "enteric redmouth", "yersiniosis"]
+
+[facets.pathogen.terms.furunculosis]
+label = "Furunculosis"
+aliases = ["aeromonas salmonicida", "furunculosis"]
+
+[facets.pathogen.terms.vibriosis]
+label = "Vibriosis"
+aliases = ["vibrio anguillarum", "vibriosis", "listonella", "vibrio harveyi", "photobacterium damselae", "pasteurellosis"]
+
+[facets.pathogen.terms.srs_piscirickettsia]
+label = "Srs Piscirickettsia"
+aliases = ["piscirickettsia salmonis", "srs", "rickettsial septicaemia", "septicemia rickettsial salmonidea"]
+
+[facets.pathogen.terms.flavobacterium]
+label = "Flavobacterium"
+aliases = ["flavobacterium", "columnaris", "bacterial gill disease", "rainbow trout fry syndrome", "cytophaga", "flexibacter", "coldwater disease"]
+
+[facets.pathogen.terms.lactococcosis]
+label = "Lactococcosis"
+aliases = ["lactococcus garvieae", "lactococcosis", "streptococcus iniae", "streptococcosis", "streptococcus agalactiae"]
+
+[facets.pathogen.terms.nodavirus]
+label = "Nodavirus"
+aliases = ["nodavirus", "viral nervous necrosis", "vnn", "viral encephalopathy and retinopathy", "ver", "betanodavirus"]
+
+[facets.pathogen.terms.sparicotyle]
+label = "Sparicotyle"
+aliases = ["sparicotyle chrysophrii", "gill fluke", "polyopisthocotylea"]
+
+[facets.pathogen.terms.enteromyxum]
+label = "Enteromyxum"
+aliases = ["enteromyxum leei", "myxozoan", "myxobolus", "proliferative kidney disease", "tetracapsuloides"]
+
+[facets.pathogen.terms.amyloodinium]
+label = "Amyloodinium"
+aliases = ["amyloodinium ocellatum", "velvet disease"]
+
+[facets.pathogen.terms.tilapia_lake_virus]
+label = "Tilapia Lake Virus"
+aliases = ["tilapia lake virus", "tilv", "syncytial hepatitis of tilapia"]
+
+[facets.pathogen.terms.koi_herpesvirus]
+label = "Koi Herpesvirus"
+aliases = ["koi herpesvirus", "khv", "cyprinid herpesvirus", "carp edema virus", "spring viraemia of carp", "svcv"]
+
+[facets.pathogen.terms.ehp_shrimp]
+label = "Ehp Shrimp"
+aliases = ["enterocytozoon hepatopenaei", "ehp", "white spot syndrome", "wssv", "ahpnd", "early mortality syndrome"]
+
+[facets.pathogen.terms.saprolegnia]
+label = "Saprolegnia"
+aliases = ["saprolegnia", "saprolegniasis", "oomycete"]
+
+[facets.pathogen.terms.crayfish_plague]
+label = "Crayfish Plague"
+aliases = ["crayfish plague", "krepsepest", "aphanomyces astaci", "signal crayfish"]
+
+[facets.pathogen.terms.ich]
+label = "Ich"
+aliases = ["ichthyophthirius", "white spot disease", "cryptocaryon"]
+
+[organisations]
+exclusive_groups = ["producer_med", "producer_salmon"]
+exclusive_ids = ["aller_aqua", "apromar", "aquatic_diagnostics", "aquatreck", "asc", "benchmark", "biodetect", "biomar", "cargill_ewos", "centrovet", "eas", "feap", "gsa", "havforskningsinstituttet", "hcmr", "nofima", "pharmaq", "sernapesca", "skretting", "stirling", "veterquimica", "vetinst"]
+
+[organisations.terms.hipra]
+label = "HIPRA"
+aliases = ["hipra", "laboratorios hipra", "hipra animal health"]
+group = "animal_health"
+
+[organisations.terms.pharmaq]
+label = "PHARMAQ"
+aliases = ["pharmaq", "pharmaq analytiq"]
+group = "animal_health"
+
+[organisations.terms.zoetis]
+label = "Zoetis"
+aliases = ["zoetis"]
+group = "animal_health"
+
+[organisations.terms.msd_animal_health]
+label = "MSD Animal Health"
+aliases = ["msd animal health", "merck animal health", "aquavac", "intervet"]
+group = "animal_health"
+
+[organisations.terms.elanco]
+label = "Elanco"
+aliases = ["elanco"]
+group = "animal_health"
+
+[organisations.terms.vaxxinova]
+label = "Vaxxinova"
+aliases = ["vaxxinova"]
+group = "animal_health"
+
+[organisations.terms.virbac]
+label = "Virbac"
+aliases = ["virbac"]
+group = "animal_health"
+
+[organisations.terms.ceva]
+label = "Ceva Santé Animale"
+aliases = ["ceva santé animale", "ceva animal health"]
+group = "animal_health"
+
+[organisations.terms.veterquimica]
+label = "Veterquímica"
+aliases = ["veterquimica", "veterquímica"]
+group = "animal_health"
+
+[organisations.terms.centrovet]
+label = "Centrovet"
+aliases = ["centrovet"]
+group = "animal_health"
+
+[organisations.terms.benchmark]
+label = "Benchmark Holdings"
+aliases = ["benchmark holdings", "benchmark genetics", "benchmark animal health", "fish vet group"]
+group = "animal_health"
+
+[organisations.terms.aquatic_diagnostics]
+label = "Aquatic Diagnostics"
+aliases = ["aquatic diagnostics"]
+group = "animal_health"
+
+[organisations.terms.aquatreck]
+label = "Aquatreck Animal Health"
+aliases = ["aquatreck", "aquatreck animal health"]
+group = "animal_health"
+
+[organisations.terms.biodetect]
+label = "Biodetect"
+aliases = ["biodetect"]
+group = "animal_health"
+
+[organisations.terms.skretting]
+label = "Skretting"
+aliases = ["skretting", "nutreco"]
+group = "feed"
+
+[organisations.terms.biomar]
+label = "BioMar"
+aliases = ["biomar"]
+group = "feed"
+
+[organisations.terms.aller_aqua]
+label = "Aller Aqua"
+aliases = ["aller aqua"]
+group = "feed"
+
+[organisations.terms.cargill_ewos]
+label = "Cargill / EWOS"
+aliases = ["ewos", "cargill aqua nutrition"]
+group = "feed"
+
+[organisations.terms.dsm_firmenich]
+label = "dsm-firmenich"
+aliases = ["dsm-firmenich", "dsm firmenich"]
+group = "feed"
+
+[organisations.terms.avramar]
+label = "Avramar"
+aliases = ["avramar", "nireus", "selonda", "perseus aquaculture"]
+group = "producer_med"
+
+[organisations.terms.philosofish]
+label = "Philosofish"
+aliases = ["philosofish"]
+group = "producer_med"
+
+[organisations.terms.galaxidi]
+label = "Galaxidi Marine Farm"
+aliases = ["galaxidi"]
+group = "producer_med"
+
+[organisations.terms.kefalonia_fisheries]
+label = "Kefalonia Fisheries"
+aliases = ["kefalonia fisheries"]
+group = "producer_med"
+
+[organisations.terms.andromeda]
+label = "Andromeda Group"
+aliases = ["andromeda group", "andrómeda"]
+group = "producer_med"
+
+[organisations.terms.kilic]
+label = "Kılıç Deniz"
+aliases = ["kilic deniz", "kılıç deniz", "kilic seafood"]
+group = "producer_med"
+
+[organisations.terms.gumusdoga]
+label = "Gümüşdoğa"
+aliases = ["gumusdoga", "gümüşdoğa"]
+group = "producer_med"
+
+[organisations.terms.camli]
+label = "Çamlı Yem Besicilik"
+aliases = ["camli yem", "çamlı"]
+group = "producer_med"
+
+[organisations.terms.sagun]
+label = "Sagun Group"
+aliases = ["sagun"]
+group = "producer_med"
+
+[organisations.terms.culmarex]
+label = "Culmarex"
+aliases = ["culmarex", "culmárex"]
+group = "producer_med"
+
+[organisations.terms.cromaris]
+label = "Cromaris"
+aliases = ["cromaris"]
+group = "producer_med"
+
+[organisations.terms.frescamar]
+label = "Frescamar"
+aliases = ["frescamar"]
+group = "producer_med"
+
+[organisations.terms.aquanaria]
+label = "Aquanaria"
+aliases = ["aquanaria"]
+group = "producer_med"
+
+[organisations.terms.piszolla]
+label = "Ittica / Italian producers"
+aliases = ["ittica caldoli", "ittica ugento", "panittica"]
+group = "producer_med"
+
+[organisations.terms.mowi]
+label = "Mowi"
+aliases = ["mowi", "marine harvest"]
+group = "producer_salmon"
+
+[organisations.terms.salmar]
+label = "SalMar"
+aliases = ["salmar"]
+group = "producer_salmon"
+
+[organisations.terms.leroy]
+label = "Lerøy Seafood"
+aliases = ["lerøy", "leroy seafood"]
+group = "producer_salmon"
+
+[organisations.terms.grieg_seafood]
+label = "Grieg Seafood"
+aliases = ["grieg seafood"]
+group = "producer_salmon"
+
+[organisations.terms.bakkafrost]
+label = "Bakkafrost"
+aliases = ["bakkafrost"]
+group = "producer_salmon"
+
+[organisations.terms.cermaq]
+label = "Cermaq"
+aliases = ["cermaq"]
+group = "producer_salmon"
+
+[organisations.terms.aquachile]
+label = "AquaChile"
+aliases = ["aquachile", "agrosuper"]
+group = "producer_salmon"
+
+[organisations.terms.camanchaca]
+label = "Salmones Camanchaca"
+aliases = ["camanchaca"]
+group = "producer_salmon"
+
+[organisations.terms.multi_x]
+label = "Multi X"
+aliases = ["multi x", "multiexport"]
+group = "producer_salmon"
+
+[organisations.terms.woah]
+label = "WOAH"
+aliases = ["woah", "world organisation for animal health", "oie ", "wahis"]
+group = "authority"
+
+[organisations.terms.efsa]
+label = "EFSA"
+aliases = ["efsa", "european food safety authority"]
+group = "authority"
+
+[organisations.terms.mattilsynet]
+label = "Mattilsynet"
+aliases = ["mattilsynet", "norwegian food safety authority"]
+group = "authority"
+
+[organisations.terms.vetinst]
+label = "Norwegian Veterinary Institute"
+aliases = ["veterinærinstituttet", "norwegian veterinary institute", "veterinaerinstituttet"]
+group = "authority"
+
+[organisations.terms.sernapesca]
+label = "Sernapesca"
+aliases = ["sernapesca"]
+group = "authority"
+
+[organisations.terms.cefas]
+label = "Cefas"
+aliases = ["cefas"]
+group = "authority"
+
+[organisations.terms.hcmr]
+label = "Hellenic Centre for Marine Research"
+aliases = ["hellenic centre for marine research", "hcmr", "ελκεθε"]
+group = "institute"
+
+[organisations.terms.irta]
+label = "IRTA"
+aliases = ["irta"]
+group = "institute"
+
+[organisations.terms.ieo_csic]
+label = "IEO / CSIC"
+aliases = ["instituto español de oceanografía", "instituto espanol de oceanografia", "torre de la sal", "iats-csic"]
+group = "institute"
+
+[organisations.terms.izsve]
+label = "IZSVe"
+aliases = ["izsve", "istituto zooprofilattico sperimentale delle venezie"]
+group = "institute"
+
+[organisations.terms.ciheam]
+label = "CIHEAM Bari"
+aliases = ["ciheam"]
+group = "institute"
+
+[organisations.terms.wur]
+label = "Wageningen University"
+aliases = ["wageningen"]
+group = "institute"
+
+[organisations.terms.stirling]
+label = "University of Stirling"
+aliases = ["institute of aquaculture", "university of stirling"]
+group = "institute"
+
+[organisations.terms.nofima]
+label = "Nofima"
+aliases = ["nofima"]
+group = "institute"
+
+[organisations.terms.havforskningsinstituttet]
+label = "Institute of Marine Research (NO)"
+aliases = ["havforskningsinstituttet", "institute of marine research"]
+group = "institute"
+
+[organisations.terms.feap]
+label = "FEAP"
+aliases = ["feap", "federation of european aquaculture producers"]
+group = "body"
+
+[organisations.terms.apromar]
+label = "APROMAR"
+aliases = ["apromar"]
+group = "body"
+
+[organisations.terms.eas]
+label = "European Aquaculture Society"
+aliases = ["european aquaculture society", "aquaculture europe"]
+group = "body"
+
+[organisations.terms.gsa]
+label = "Global Seafood Alliance"
+aliases = ["global seafood alliance", "best aquaculture practices"]
+group = "body"
+
+[organisations.terms.asc]
+label = "Aquaculture Stewardship Council"
+aliases = ["aquaculture stewardship council"]
+group = "body"
+
+[relevance]
+strong = ["aquaculture", "aquacultura", "acuicultura", "akvakultur", "aquaculture", "fish farm", "fish farming", "fish farmer", "mariculture", "hatchery", "broodstock", "fingerling", "smolt", "post-smolt", "fish health", "fish disease", "fish welfare", "aquafeed", "fish feed", "fry tank", "recirculating aquaculture", "net pen", "sea cage", "sea lice", "oppdrett", "fiskehelse", "fiskeoppdrett", "piscicultura", "piscifactoria", "salmon farming", "shrimp farming", "tilapia farming", "fish stock", "aquatic animal health", "farmed fish", "farmed salmon", "farmed shrimp", "havbruk", "oppdrettsanlegg", "lakseanlegg", "matfiskanlegg", "settefiskanlegg", "oppdrettsselskap", "lakseoppdrett", "lakselus", "laksepris", "slaktemerd", "merdkant", "fiskeoppdretter", "centro de cultivo", "salmonicultura", "cultivo de peces", "jaulas", "ichthyokalliergeia", "balik ciftligi"]
+weak = ["vaccine", "vaccination", "pathogen", "mortality", "biosecurity", "veterinary", "seafood", "fishery", "fisheries", "disease outbreak", "antimicrobial", "immunisation", "immunization", "price", "prices", "export", "exports", "harvest", "biomass", "tonnes", "produksjon", "eksport", "pris"]
+
+[glossary.Norwegian]
+"avlusing / avlusning" = "delousing (sea lice treatment)"
+"lakselus" = "sea lice"
+"lusegrense" = "sea lice limit"
+"oppdrett / oppdretter" = "fish farming / fish farmer"
+"merd" = "sea pen or cage"
+"settefisk" = "juvenile fish, smolt"
+"slakting / slaktet ut" = "harvest / culled out"
+"dodelighet" = "mortality"
+"gjelle / gjelleproblemer" = "gill / gill problems"
+"sykdom / utbrudd" = "disease / outbreak"
+"ILA" = "infectious salmon anaemia (ISA)"
+"PD" = "pancreas disease"
+"rensefisk / rognkjeks / leppefisk" = "cleaner fish / lumpfish / wrasse"
+"gebyr / milliongebyr" = "fine / million-kroner fine"
+"Mattilsynet" = "Norwegian Food Safety Authority"
+"Veterinaerinstituttet" = "Norwegian Veterinary Institute"
+"fiskehelse / fiskevelferd" = "fish health / fish welfare"
+"trafikklyssystemet" = "the traffic light system (production regulation)"
+"biomasse / MTB" = "biomass / maximum allowed biomass"
+"rommelig" = "escape"
+"brakklegging" = "fallowing"
+
+[glossary.Spanish]
+"brote" = "outbreak"
+"mortalidad" = "mortality"
+"cosecha" = "harvest"
+"siembra" = "stocking"
+"enfermedad" = "disease"
+"piojo de mar / Caligus" = "sea lice"
+"SRS" = "salmonid rickettsial septicaemia"
+"Sernapesca" = "Chilean national fisheries and aquaculture service"
+"vacuna" = "vaccine"
+"centro de cultivo" = "farm site"
+"dorada / lubina" = "gilthead seabream / European seabass"
+"alimento / pienso" = "feed"
+
+[glossary.Greek]
+"tsipoura" = "gilthead seabream"
+"lavraki" = "European seabass"
+"ichthyokalliergeia" = "aquaculture"
+"asthenia" = "disease"
+"thnisimotita" = "mortality"

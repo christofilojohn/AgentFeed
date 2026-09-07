@@ -1,0 +1,85 @@
+name = "generic"
+label = "General news"
+description = """
+No subject assumptions. Every item is accepted and filed by broad theme only.
+Start here, watch what accumulates, then copy this file and add the facets and
+vocabulary your field actually uses.
+"""
+analyst_role = "a news analyst"
+audience = "a professional reader who wants the substance without the padding"
+item_types = ["news", "research", "regulatory", "market_report", "company_release", "commentary", "other"]
+
+[facets.theme]
+label = "Themes"
+key = "themes"
+icon = "tag"
+
+[facets.theme.terms.technology]
+label = "Technology"
+aliases = ["software", "hardware", "artificial intelligence", "semiconductor", "cloud computing", "cybersecurity"]
+
+[facets.theme.terms.science]
+label = "Science & research"
+aliases = ["study", "peer-reviewed", "preprint", "researchers", "journal", "clinical trial"]
+
+[facets.theme.terms.business]
+label = "Business & corporate"
+aliases = ["acquisition", "merger", "quarterly results", "earnings", "ipo", "funding round", "layoffs"]
+
+[facets.theme.terms.markets]
+label = "Markets & economy"
+aliases = ["inflation", "interest rate", "commodity", "stock market", "bond yield", "recession", "gdp"]
+
+[facets.theme.terms.policy]
+label = "Policy & regulation"
+aliases = ["regulation", "legislation", "directive", "sanctions", "antitrust", "ruling", "parliament"]
+
+[facets.theme.terms.health]
+label = "Health & medicine"
+aliases = ["disease", "vaccine", "outbreak", "patients", "treatment", "hospital", "epidemic"]
+
+[facets.theme.terms.energy]
+label = "Energy & climate"
+aliases = ["renewable", "emissions", "oil price", "natural gas", "solar", "wind power", "climate"]
+
+[facets.theme.terms.supply_chain]
+label = "Supply chain & logistics"
+aliases = ["shipping", "freight", "port", "logistics", "shortage", "tariff", "export controls"]
+
+[facets.region]
+label = "Regions"
+key = "regions"
+icon = "globe"
+
+[facets.region.terms.north_america]
+label = "North America"
+aliases = ["united states", "usa", "u.s.", "canada", "mexico"]
+
+[facets.region.terms.europe]
+label = "Europe"
+aliases = ["european union", "eu ", "germany", "france", "united kingdom", "spain", "italy", "netherlands", "nordic"]
+
+[facets.region.terms.asia_pacific]
+label = "Asia-Pacific"
+aliases = ["china", "japan", "korea", "india", "taiwan", "singapore", "australia", "vietnam", "indonesia"]
+
+[facets.region.terms.latin_america]
+label = "Latin America"
+aliases = ["brazil", "chile", "argentina", "colombia", "peru"]
+
+[facets.region.terms.middle_east_africa]
+label = "Middle East & Africa"
+aliases = ["saudi arabia", "uae", "israel", "egypt", "nigeria", "south africa", "kenya"]
+
+[facets.region.terms.global]
+label = "Global"
+aliases = ["global", "worldwide", "international"]
+
+[organisations]
+exclusive_groups = []
+exclusive_ids = []
+
+[relevance]
+# Empty: a generic feed keeps everything the sources give it.
+strong = []
+weak = []

@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push: { branches: [main] }
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ matrix.python }}" }
+
+      - name: Install
+        run: uv pip install --system -e . pytest
+
+      # No model server in CI, so the suite covers the deterministic layer:
+      # domain packs, topic rules, protocol types, dedup, URL handling.
+      - name: Test
+        run: pytest -q tests/
+
+      - name: Import every module
+        run: |
+          python -c "
+          import importlib, pathlib, sys
+          mods = ['agentfeed.' + '.'.join(p.with_suffix('').parts[1:])
+                  for p in pathlib.Path('agentfeed').rglob('*.py')
+                  if p.name != '__init__.py']
+          for m in mods:
+              importlib.import_module(m)
+          print(f'{len(mods)} modules import cleanly')
+          "
+
+      - name: CLI smoke test
+        run: |
+          agentfeed --help
+          agentfeed packs
+          agentfeed init --domain generic
+          agentfeed stats
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t agentfeed:ci .
+
+  # Desktop bundles, one per OS -- PyInstaller does not cross-compile.
+  desktop:
+    name: app · ${{ matrix.os }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - name: Build
+        shell: bash
+        run: |
+          uv venv --python 3.13
+          uv pip install -e '.[desktop]'
+          if [ "$RUNNER_OS" = "macOS" ]; then .venv/bin/pyinstaller --noconfirm --clean packaging/agentfeed.spec;
+          else .venv/Scripts/pyinstaller.exe --noconfirm --clean packaging/agentfeed.spec; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentFeed-${{ runner.os }}
+          path: |
+            dist/AgentFeed.app
+            dist/AgentFeed
+          if-no-files-found: error
