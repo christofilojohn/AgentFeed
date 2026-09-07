@@ -8,7 +8,7 @@
 
 **A news reader for humans, with a local open model doing the searching and
 organizing.** Describe a topic in a sentence and it files matching articles
-in by meaning, not keywords. It writes the abstract in your language,
+in by meaning. It writes the abstract in your language,
 translates on request, and lets you chat with a collection of articles —
 ask a question, get an answer that cites what it read. Nothing leaves your
 machine.
@@ -19,7 +19,7 @@ the machine except the requests that fetch the articles.
 
 It also speaks [a small protocol](PROTOCOL.md) of its own, so another agent
 can subscribe to what you've filed if you choose to expose it — covered
-further down; it's a feature on top, not the point of the app.
+further down, as an optional layer on top.
 
 ---
 
@@ -94,7 +94,7 @@ read, so `item_count: 0` right after install is correct, not broken.
 
 The same server in a native window — WKWebView on macOS, WebView2 on
 Windows — with a Dock icon, a menu bar, and no terminal to keep open. It
-opens on a welcome page rather than the feed, because the one thing a
+opens on a welcome page first, because the one thing a
 fresh install cannot do without is a model server, and a blank feed is a
 far worse first minute than a page that says so:
 
@@ -186,7 +186,7 @@ for sources that cover it and offers them at the end — no second button, no
 empty screen to interpret.
 
 
-**One question, not nine.** Say what you want to follow the way you would
+**One question.** Say what you want to follow the way you would
 say it out loud. Everything else — the vocabulary, the search anchors, the
 relevance test — is built for you and shown before anything is saved, as
 chips you can delete and a test you can edit.
@@ -317,7 +317,7 @@ just those sources through the same run machinery as everything else.
 
 Two things this taught us about small models, both preserved in the code:
 
-**Ask for a schema, not a list.** Asked in prose for six publication names,
+**Ask for a schema.** Asked in prose for six publication names,
 the 30B-A3B model spent its entire budget deliberating and never reached an
 answer — while filling that deliberation with lines like `- IEEE Spectrum
 often does deep dives`, which a line parser is delighted to mistake for the
@@ -393,8 +393,8 @@ The rejection log is the point:
 
 Verdicts are cached per (filter, item) and shared between subscribers asking
 the same question, so each item is judged once ever. Items that could not be
-judged are **withheld rather than admitted** — a filter that fails open is not
-a filter — and reported in `notices` so nothing disappears silently.
+judged are **withheld**: a filter that fails open isn't a filter. That's
+reported in `notices` so nothing disappears silently.
 
 ```bash
 .venv/bin/agentfeed filter try "substantively about NVIDIA" --prefilter nvidia
@@ -426,7 +426,7 @@ where it falls over — it hands back its English planning notes and calls
 them the answer. Translation is the one task every model is reliably good
 at. It is also cheaper: one abstract, then a short translation per language.
 
-**The output budget is sized for the script, not for English.** A tokenizer
+**The output budget is sized for the script.** A tokenizer
 trained mostly on English spends about three times as many tokens on Greek
 or Hindi as on the same text in English, so an English-sized budget cuts
 those languages off mid-word — and a truncated paragraph reads like a
@@ -581,7 +581,7 @@ answering — rather than trusting a config file. A runtime that silently
 ignores the schema field returns prose where JSON was expected, and that
 failure is otherwise baffling.
 
-### Three things measured, not assumed
+### Three things, measured
 
 **Parameter count does not predict speed.** A 30B Mixture-of-Experts model
 activates ~3B parameters per token and beat a dense 12B by **4×**. Generation
@@ -630,7 +630,7 @@ hidden prompt scaffolding to fight when the model does something odd.
 numpy matrix. At one publisher and tens of thousands of items, a brute-force
 dot product beats any external index on latency and operational burden.
 
-**Constrained decoding, not parsing.** Enrichment answers a strict JSON
+**Constrained decoding.** Enrichment answers a strict JSON
 schema compiled to a grammar, so the token stream cannot leave the schema.
 Labels are still intersected with the vocabulary afterwards, because a model
 will occasionally invent a plausible-looking id.
@@ -649,8 +649,8 @@ will occasionally invent a plausible-looking id.
 - **Dates on the open web are unreliable**, which is why `date_confidence`
   exists. Roughly a fifth of items in a typical crawl carry no usable date.
 - **There is no free-form chat agent.** Every model call here is a bounded,
-  typed job — abstract, judge, answer-from-a-collection, analyse — rather than
-  an open conversation. That is a design choice, not a gap: it is what keeps
+  typed job — abstract, judge, answer-from-a-collection, analyse — never
+  an open conversation. That's deliberate: it is what keeps
   every answer cited and every call affordable on a laptop.
 - **The model is not an expert.** Treat classifications and significance
   ratings as a good first pass. Everything links to its source.
