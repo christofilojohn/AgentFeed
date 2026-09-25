@@ -287,6 +287,9 @@ async def probe_web_watch(topic: dict[str, Any], terms: list[str],
     """
     if not terms:
         return None
+    from .optins import enabled
+    if not enabled("duckduckgo"):
+        return None
     query = " OR ".join(f'"{t}"' for t in terms[:4])
     config = {"query": query, "timelimit": "m", "max_results": 12}
     try:
@@ -308,6 +311,64 @@ async def probe_web_watch(topic: dict[str, Any], terms: list[str],
             "site": "", "config": config, "hits": hits, "scanned": len(items),
             "samples": samples,
             "why": f"a standing search returned {hits} matching result(s) now"}
+
+
+async def probe_news_feed(subject: dict[str, Any], terms: list[str],
+                          exclude: list[str], client: httpx.AsyncClient
+                          ) -> dict[str, Any] | None:
+    """A news-search RSS feed for the subject's own words.
+
+    A real RSS feed -- it goes in the reader like any other and is fetched
+    on the same schedule -- that exists for any subject, including the ones
+    no specialist publication covers. Offered only if it returns on-topic
+    headlines right now.
+    """
+    if not terms:
+        return None
+    from .optins import enabled
+    if not enabled("google_news"):
+        return None
+    from urllib.parse import quote_plus
+    query = " OR ".join(f'"{t}"' if " " in t else t for t in terms[:4])
+    url = ("https://news.google.com/rss/search?q=" + quote_plus(query)
+           + "&hl=en-US&gl=US&ceid=US:en")
+    hits, seen, samples = await _probe_feed(client, url, terms, exclude)
+    if hits < MIN_HITS:
+        return None
+    return {"kind": "rss", "name": f"News search: {subject.get('name', '')}"[:80],
+            "proposed_as": "news search feed", "url": url, "site": "",
+            "hits": hits, "scanned": seen, "samples": samples,
+            "why": f"an RSS news search — {hits} of the latest {seen} match"}
+
+
+async def probe_papers(subject: dict[str, Any], terms: list[str],
+                       exclude: list[str], client: httpx.AsyncClient
+                       ) -> dict[str, Any] | None:
+    """A standing OpenAlex query: recent research on the subject, with
+    citation counts. Offered only if it finds matching papers now."""
+    if not terms:
+        return None
+    query = " ".join(terms[:3])
+    config = {"search": query, "days": 90, "limit": 25}
+    try:
+        from .sources.openalex import fetch_openalex
+        items = await fetch_openalex(client, "", config)
+    except Exception as exc:  # noqa: BLE001 - an API hiccup is not an error
+        log.info("scout: openalex probe failed: %s", exc)
+        return None
+    samples, hits = [], 0
+    for it in items:
+        if _hit(f"{it.title} {it.text[:600]}", terms, exclude):
+            hits += 1
+            if len(samples) < 3:
+                samples.append(it.title[:140])
+    if hits < MIN_HITS:
+        return None
+    return {"kind": "openalex", "name": f"Research: {subject.get('name', '')}"[:80],
+            "proposed_as": "academic search", "url": f"openalex:{query}",
+            "site": "https://openalex.org", "config": config, "hits": hits,
+            "scanned": len(items), "samples": samples,
+            "why": f"{hits} paper(s) from the last 90 days match (OpenAlex)"}
 
 
 # --------------------------------------------------------------------------
@@ -344,16 +405,41 @@ async def _search(watch_subject: dict[str, Any], terms: list[str],
 
             await asyncio.gather(*[one(n) for n in names])
 
-        say("checking whether a standing web search would find anything…")
-        watch = await probe_web_watch(watch_subject, terms, exclude, client)
-        if watch:
-            found.append(watch)
+        say("checking a news-search feed and recent research…")
+        extra = await asyncio.gather(
+            probe_news_feed(watch_subject, terms, exclude, client),
+            probe_papers(watch_subject, terms, exclude, client),
+            return_exceptions=True)
+        found += [x for x in extra if isinstance(x, dict)]
+
+        #  The scraped web search is the fallback, not a peer: an RSS feed
+        #  is what a reader should be built on.
+        if not any(f["kind"] == "rss" for f in found):
+            say("checking whether a standing web search would find anything…")
+            watch = await probe_web_watch(watch_subject, terms, exclude, client)
+            if watch:
+                found.append(watch)
 
     #  Sources already in the corpus are not suggestions.
     have = {r["url"] for r in conn().execute("SELECT url FROM sources")}
     found = [f for f in found if f["url"] not in have]
-    found.sort(key=lambda f: -f["hits"])
+    #  Publications first, then the news-search feed, research, and the web
+    #  watch last; within each, the most on-topic first.
+    order = {"publication": 0, "news search feed": 1, "academic search": 2,
+             "web search": 3}
+
+    found.sort(key=lambda f: (order.get(f.get("proposed_as", ""), 0), -f["hits"]))
+    for f in found:
+        from .retrieval import source_type
+        f["source_type"], f["source_type_label"] = source_type(f["kind"])
     return found, len(names), model_error
+
+
+def _skipped() -> list[str]:
+    """Opt-in services that were not asked, so the UI can offer them rather
+    than leave the person wondering why the list is short."""
+    from .optins import OPTINS, enabled
+    return [k for k in OPTINS if not enabled(k)]
 
 
 def _no_sources_reason(checked: int, model_error: str) -> str:
@@ -397,11 +483,13 @@ async def find_sources(subject: str, progress: Callable[[str], None] | None = No
     found, checked, model_error = await _search(
         {"name": subject}, terms, [], say)
 
+    skipped = _skipped()
     if not found:
         return {"ok": False, "subject": subject, "terms": terms,
                 "checked": checked, "model_error": model_error,
+                "skipped": skipped,
                 "reason": _no_sources_reason(checked, model_error)}
-    return {"ok": True, "subject": subject, "terms": terms,
+    return {"ok": True, "subject": subject, "terms": terms, "skipped": skipped,
             "checked": checked, "suggestions": found, "model_error": model_error}
 
 
@@ -431,9 +519,12 @@ async def scout(topic_id: int,
 
     found, checked, model_error = await _search(topic, terms, exclude, say)
 
+    skipped = _skipped()
     if not found:
         return {"ok": False, "topic": topic["name"], "terms": terms,
                 "checked": checked, "model_error": model_error,
+                "skipped": skipped, "topic_id": topic_id,
                 "reason": _no_sources_reason(checked, model_error)}
-    return {"ok": True, "topic": topic["name"], "terms": terms,
-            "checked": checked, "suggestions": found, "model_error": model_error}
+    return {"ok": True, "topic": topic["name"], "terms": terms, "skipped": skipped,
+            "topic_id": topic_id, "checked": checked, "suggestions": found,
+            "model_error": model_error}

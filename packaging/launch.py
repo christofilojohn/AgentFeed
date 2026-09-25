@@ -17,6 +17,11 @@ def _bundle_root() -> Path:
 
 
 def main() -> None:
+    #  An extension's own subprocess (see agentfeed/plugins.py): a frozen app
+    #  has no interpreter to hand `-m` to, so it re-launches this binary.
+    if len(sys.argv) > 2 and sys.argv[1] == "--plugin-child":
+        from agentfeed.plugins import run_child
+        return run_child(sys.argv[2], sys.argv[3:])
     root = _bundle_root()
     os.environ.setdefault("AGENTFEED_UI_DIR", str(root / "ui"))
     os.environ.setdefault("AGENTFEED_PACKS_DIR", str(root / "agentfeed" / "domains"))

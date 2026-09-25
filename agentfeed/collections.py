@@ -213,7 +213,7 @@ def list_dismissals(limit: int = 100) -> list[dict[str, Any]]:
 
 def list_answers(collection_id: int | None = None, limit: int = 40
                  ) -> list[dict[str, Any]]:
-    sql = ("SELECT a.id, a.collection_id, a.question, a.stats, a.model, "
+    sql = ("SELECT a.id, a.collection_id, a.question, a.stats, a.model, a.parent_id, a.pinned, "
            "a.created_at, c.name AS collection "
            "FROM collection_answers a "
            "JOIN collections c ON c.id = a.collection_id")

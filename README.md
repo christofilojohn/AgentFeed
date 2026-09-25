@@ -127,6 +127,110 @@ faster than the app. To run the window from a checkout without building:
 
 ---
 
+## First run: one sentence
+
+A fresh install opens on one question — **what do you want to track?** —
+rather than an empty three-pane reader. Type a sentence ("EV battery supply
+chain and pricing") or pick an example, and it:
+
+1. drafts the topic's vocabulary with the local model,
+2. files anything you already have that matches,
+3. looks for sources that cover it — **publications' RSS feeds** and **recent
+   research** from OpenAlex, plus a Google News search feed and a DuckDuckGo
+   web search if you have switched those on — each one fetched and proven
+   on-topic before it is shown,
+4. lets you tick which to add, then fetches them and opens the topic.
+
+Nothing is added without a click. The same flow is behind **+** next to
+*Topics* whenever you want to track something new.
+
+## Where every item came from
+
+Every row, article, citation, export and source carries a badge for its
+kind of origin — **RSS**, **Academic**, **Web**, **Search**, **Agent** — so a
+peer-reviewed abstract never reads the same as a scraped search hit. A journal's
+own RSS feed counts as academic (the DOI says so). *Source type* is also a
+filter in the sidebar, counted under whatever else is applied.
+
+## A feed reader, with agents on top
+
+- **Feeds** in the sidebar lists every enabled source with its unread count;
+  click one to read just that feed, newest first. Click it again for everything.
+- **Find feeds with the model** (Sources panel): describe a subject, the model
+  names publications, and each is verified on the live web to publish an RSS
+  feed whose recent posts actually match. The model names; it never supplies a
+  URL, because those it invents.
+- **OPML** import and export, so moving to or from another reader is one file.
+
+### Third-party search services are opt-in
+
+Two things lean on someone else's service rather than a publisher's feed:
+a **Google News** RSS search feed for a topic, and **DuckDuckGo** web search
+(watching sites that publish no feed, and a fallback when finding sources).
+Both are **off until switched on** in *Status → Web search services*, since
+each has terms that limit automated use. When a source search ran without
+them, the results say so and offer to turn them on and search again. Feeds
+you added by hand keep working either way.
+
+Topics, collections, abstracts, questions and analyses all work on top of
+the same feeds.
+
+## Research you can keep, and send
+
+Asking a question, summarising a collection or analysing coverage takes a
+model call and a minute. None of it is lost any more:
+
+- **Every screen has an address** (`#/answer/45`, `#/item/12`, …). Follow a
+  citation and **‹ / ›** or **⌘[ / ⌘]** go back and forward; quit the app and
+  it reopens on the same article or answer, with the same list beside it.
+- **Work keeps running when you click away.** An answer that lands after you
+  moved on is never painted over what you are reading — it waits under
+  **Research** in the sidebar and a toast offers to open it.
+- **Research** (≡) lists every conversation and analysis; pin the ones that
+  matter.
+- **Export to Markdown or PDF** from any answer, analysis or collection.
+  Files are self-contained — question, answer, findings with numbered
+  citations, and every source with its URL and source type — and named so a
+  folder of them sorts by date and greps by subject:
+
+  ```
+  ~/Documents/AgentFeed Exports/EV Batteries/2026-09-25_answer_what-drives-margins_a45.pdf
+  ~/Documents/AgentFeed Exports/Signals/2026-09-25_analysis_catl_s7.md
+  ```
+
+  The date is when the report was written, not when it was exported. The
+  folder is set in *Status → Exports*.
+
+## Everything is connected
+
+Articles, sources, organisations, labels, topics, collections, answers and
+analyses form one graph. Each relation is its own narrow, indexed join table
+(`topic_items`, `collection_items`, `tags`, and since schema v11
+`answer_citations` / `analysis_citations`), so nothing is stored twice and a
+neighbourhood costs the same at a hundred items or a million.
+[`graph.py`](agentfeed/graph.py) declares the relations once:
+
+```
+item ─ from ─▶ source      item ─ mentions ─▶ organisation     item ─ filed in ─▶ topic
+item ─ kept in ─▶ collection    answer / analysis ─ cites ─▶ item    answer ─ follow-up ─▶ answer
+item ─ related ─▶ item   (shared organisations, computed from the tag index, never stale)
+```
+
+Every article ends with **Connected to**: its source, the organisations it
+names, the topics and collections it is in, the answers and analyses that
+cite it, and related articles. Organisations and sources have their own
+pages (what they connect to, *show every article*, *analyse coverage*).
+`GET /api/graph/{type}/{id}` returns the same for scripts.
+
+## Themes
+
+**Auto** (follows the system), **Light**, **Dark**, and **Paper** — warm
+newsprint with serif type and a drop cap, for long reading sessions. The
+switch is at the bottom of the sidebar; the choice is kept in the database,
+so it survives a reinstall.
+
+---
+
 
 ## Domain packs
 
@@ -615,7 +719,12 @@ agentfeed/
   renditions.py     headline / brief / full / original, each priced
   signals.py        evidence-linked coverage analysis (never advice)
   pipeline/         ingest → translate → enrich → embed
-  retrieval.py      hybrid BM25 + vector search with RRF fusion
+  retrieval.py      hybrid BM25 + vector search with RRF fusion; source types
+  graph.py          one-hop neighbourhoods over every join table
+  export.py         answers / analyses / collections → Markdown and PDF
+  opml.py           feeds in and out of other readers
+  optins.py         Google News / DuckDuckGo, off until switched on
+  plugins.py        extension hooks (routes, UI, runtimes, model choice)
   api.py            dashboard API + protocol mounted
 ui/                 the dashboard (no build step)
 ```
@@ -634,6 +743,28 @@ dot product beats any external index on latency and operational burden.
 schema compiled to a grammar, so the token stream cannot leave the schema.
 Labels are still intersected with the vocabulary afterwards, because a model
 will occasionally invent a plausible-looking id.
+
+### Extensions
+
+[`plugins.py`](agentfeed/plugins.py) lets a separate package add to the app
+without forking it: API routes, a script and stylesheet for the dashboard
+and welcome page (hooks on the onboarding model line and in *Status*), a
+model runtime to detect first, how models are chosen on it, and a
+subprocess of its own in the frozen app. Packages register through the
+`agentfeed.plugins` entry point, or `AGENTFEED_PLUGINS=module:object`. The
+core never names one, and a plugin that fails to load is skipped, not fatal.
+
+### Licences
+
+AgentFeed is MIT. Its dependencies are MIT, BSD, Apache-2.0, PSF, ISC and
+MPL-2.0 (certifi, unmodified) — all fine to ship in a closed or paid
+binary. PDFs are written with ReportLab (BSD). The build scripts generate
+`THIRD_PARTY_LICENSES.txt` from the installed dependency tree and ship it
+inside the app, which is what those licences ask of a binary:
+
+```bash
+python scripts/third_party_licenses.py "agentfeed[desktop]" -o THIRD_PARTY_LICENSES.txt
+```
 
 ---
 

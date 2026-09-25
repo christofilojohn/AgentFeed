@@ -3,6 +3,8 @@ $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
 uv pip install -q -e ".[desktop]"
 Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
+# The licences every bundled dependency asks to be shipped with it.
+.\.venv\Scripts\python.exe scripts\third_party_licenses.py "agentfeed[desktop]" -o THIRD_PARTY_LICENSES.txt
 .\.venv\Scripts\pyinstaller.exe --noconfirm --clean packaging\agentfeed.spec
 Write-Host "`nBuilt: dist\AgentFeed\AgentFeed.exe"
 Write-Host "Ship:  Compress-Archive dist\AgentFeed dist\AgentFeed-windows.zip"

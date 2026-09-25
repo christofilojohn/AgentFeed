@@ -412,9 +412,62 @@ VALUES (1, 'Favourites', 'Everything worth keeping.', 0);
 """
 
 
+# --------------------------------------------------------------------------
+# The graph
+# --------------------------------------------------------------------------
+# Everything already connected through typed join tables -- item→source,
+# item→tag/entity, item→topic, item→collection -- except the things a person
+# produced: answers and analyses cited items only inside a JSON blob, and a
+# follow-up knew its parent only through `stats`. A blob cannot be joined, so
+# "which of my reports rest on this article?" had no answer.
+#
+# Each relation stays its own narrow table with an index in both directions,
+# rather than one generic edges table: foreign keys cascade, the planner uses
+# the indexes, and `graph.py` walks them all from one declaration.
+SCHEMA_V11 = """
+CREATE INDEX IF NOT EXISTS idx_items_source ON items(source_id);
+CREATE INDEX IF NOT EXISTS idx_sources_kind ON sources(kind);
+
+CREATE TABLE IF NOT EXISTS answer_citations (
+    answer_id INTEGER NOT NULL REFERENCES collection_answers(id) ON DELETE CASCADE,
+    item_id   INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    PRIMARY KEY (answer_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_answer_citations_item ON answer_citations(item_id);
+
+CREATE TABLE IF NOT EXISTS analysis_citations (
+    analysis_id INTEGER NOT NULL REFERENCES analyses(id) ON DELETE CASCADE,
+    item_id     INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    PRIMARY KEY (analysis_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_analysis_citations_item ON analysis_citations(item_id);
+
+--  A conversation is a chain of answers. The parent used to live in
+--  stats.parent_id, which nothing could index.
+ALTER TABLE collection_answers ADD COLUMN parent_id INTEGER
+    REFERENCES collection_answers(id) ON DELETE SET NULL;
+ALTER TABLE collection_answers ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_answers_parent ON collection_answers(parent_id);
+UPDATE collection_answers
+   SET parent_id = json_extract(stats, '$.parent_id')
+ WHERE json_extract(stats, '$.parent_id') IN (SELECT id FROM collection_answers);
+
+--  Backfill from the blobs, keeping only citations that still resolve.
+INSERT OR IGNORE INTO answer_citations(answer_id, item_id)
+SELECT a.id, CAST(json_extract(j.value, '$.id') AS INTEGER)
+  FROM collection_answers a, json_each(a.cited) j
+ WHERE CAST(json_extract(j.value, '$.id') AS INTEGER) IN (SELECT id FROM items);
+
+INSERT OR IGNORE INTO analysis_citations(analysis_id, item_id)
+SELECT a.id, CAST(json_extract(j.value, '$.id') AS INTEGER)
+  FROM analyses a, json_each(a.cited) j
+ WHERE CAST(json_extract(j.value, '$.id') AS INTEGER) IN (SELECT id FROM items);
+"""
+
+
 MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4,
                          SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8,
-                         SCHEMA_V9, SCHEMA_V10]
+                         SCHEMA_V9, SCHEMA_V10, SCHEMA_V11]
 
 
 def _connect() -> sqlite3.Connection:
@@ -527,3 +580,18 @@ def all_settings() -> dict[str, str]:
 
 def db_file() -> Path:
     return settings.db_path
+
+
+def link_citations(table: str, owner_col: str, owner_id: int,
+                   item_ids: Any) -> None:
+    """Record what a report rests on, as rows rather than a blob. Ids that
+    no longer resolve are skipped, not errors: an item can be dismissed
+    between being read and being cited."""
+    assert table in ("answer_citations", "analysis_citations")
+    ids = sorted({int(i) for i in item_ids or []})
+    if not ids:
+        return
+    conn().executemany(
+        f"INSERT OR IGNORE INTO {table}({owner_col}, item_id) "
+        f"SELECT ?, id FROM items WHERE id = ?",
+        [(owner_id, i) for i in ids])

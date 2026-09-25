@@ -59,6 +59,55 @@ def strip_reasoning(text: str) -> str:
     return _THINK.sub("", text or "").strip()
 
 
+_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+
+
+def extract_json(raw: str) -> str:
+    """The outermost JSON object in a reply, or "" if there is none."""
+    text = raw or ""
+    m = _FENCE.search(text)
+    if m:
+        text = m.group(1)
+    start = text.find("{")
+    if start < 0:
+        return ""
+    depth, in_str, esc = 0, False, False
+    for i, ch in enumerate(text[start:], start):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return ""
+
+
+def _plugin_label() -> str | None:
+    from .plugins import first
+    return first("llm_label", _provider_key())
+
+
+def _provider_key() -> str:
+    return getattr(ACTIVE_PROVIDER, "key", "") or "custom"
+
+
+def forget_backend() -> None:
+    """Drop the cached runtime and model choice, so the next call finds the
+    server afresh -- after an extension starts or stops a runtime of its own."""
+    global ACTIVE_PROVIDER
+    ACTIVE_PROVIDER = None
+    _resolved.clear()
+
+
 def strictify(schema: dict[str, Any]) -> dict[str, Any]:
     """Make a Pydantic JSON schema acceptable to strict grammar decoding.
 
@@ -223,8 +272,10 @@ class LLM:
             "provider_label": provider.label if provider else self.base_url,
             "context_hint": provider.context_hint if provider else "",
             "models": ids,
-            "chat_model": want_chat,
-            "chat_loaded": any(want_chat in m for m in ids),
+            #  An extension that runs its own model names it better than a
+            #  model id can.
+            "chat_model": _plugin_label() or want_chat,
+            "chat_loaded": bool(_plugin_label()) or any(want_chat in m for m in ids),
             "embed_model": want_embed,
             "embed_loaded": any(want_embed in m for m in ids),
             "base_url": self.base_url,
@@ -260,6 +311,9 @@ class LLM:
             payload["tool_choice"] = "auto"
         if response_format:
             payload["response_format"] = response_format
+        #  An extension serving its own runtime may need request extras.
+        from .plugins import call
+        call("llm_payload", _provider_key(), payload)
 
         c = await self.client()
         last: Exception | None = None
@@ -390,6 +444,16 @@ class LLM:
             try:
                 return schema_model.model_validate_json(raw)
             except Exception as exc:  # noqa: BLE001
+                #  A runtime without schema-constrained decoding (mlx_lm,
+                #  some llama.cpp builds, older Ollama) returns the right JSON wrapped in
+                #  a code fence or a sentence. Take the object out before
+                #  deciding the model got it wrong.
+                inner = extract_json(raw)
+                if inner and inner != raw:
+                    try:
+                        return schema_model.model_validate_json(inner)
+                    except Exception:  # noqa: BLE001
+                        pass
                 last = exc
                 if _ran_out_of_room(exc):
                     #  Not a semantic failure: the grammar was still emitting
@@ -460,6 +524,8 @@ async def ensure_backend(force: bool = False) -> Any:
     global ACTIVE_PROVIDER
     if ACTIVE_PROVIDER is not None and not force:
         return ACTIVE_PROVIDER
+    from .plugins import plugins
+    plugins()                   # extensions may add runtimes to detect
     if not settings.llm_base_url:
         #  A server the person connected to from the welcome page. Env wins
         #  when set; otherwise what they chose last time is what they get.
@@ -506,10 +572,18 @@ async def resolve_models(force: bool = False) -> dict[str, str]:
     chosen_asst = get_setting("assistant_model") or settings.assistant_model
     chosen_embed = get_setting("embed_model") or settings.embed_model
 
-    chat = _pick(available, prof.chat_prefer, chosen_chat, True)
-    embed = _pick(available, prof.embed_prefer, chosen_embed, False)
-    assistant = (_pick(available, prof.chat_prefer, chosen_asst, True)
-                 if chosen_asst else chat)
+    from .plugins import first
+    owned = first("llm_resolve", _provider_key(), available)
+    if owned:
+        #  A runtime an extension runs itself chooses its own models.
+        chat = owned.get("chat")
+        assistant = owned.get("assistant") or chat
+        embed = owned.get("embed") or chosen_embed or None
+    else:
+        chat = _pick(available, prof.chat_prefer, chosen_chat, True)
+        embed = _pick(available, prof.embed_prefer, chosen_embed, False)
+        assistant = (_pick(available, prof.chat_prefer, chosen_asst, True)
+                     if chosen_asst else chat)
 
     _resolved.clear()
     _resolved.update({

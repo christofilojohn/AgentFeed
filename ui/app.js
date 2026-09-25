@@ -27,6 +27,13 @@ const state = {
   draft: null,        // the rule being built, before it is saved
   thread: { collection: null, answers: [] },   // the running conversation
   collection: null,   // the open collection, or null
+  // Which reader screen is current. Bumped on every navigation, so work that
+  // finishes after the reader has moved on knows not to paint over it.
+  screenToken: 0,
+  routing: false,     // true while replaying an address from history
+  pending: [],        // answers and analyses still being written
+  sources: [],
+  feedsOpen: false,
 };
 
 function setBack(label, fn) { state.back = { label, fn }; }
@@ -40,6 +47,7 @@ function syncReaderStar(on) {
 }
 
 function clearReader() {
+  mark('#/');
   state.active = null; state.activeData = null; state.back = null;
   $('#reader-actions').classList.add('hidden');
   $('#reader').innerHTML = `<div class="empty-state">
@@ -131,7 +139,10 @@ async function loadTopics() {
 async function openTopic(id) {
   const { topic, items } = await api(`/api/topics/${id}/items?limit=80`);
   state.topic = String(id);
+  state.collection = null;
   state.items = items;
+  saveListState();
+  $$('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.topic === String(id)));
   $('#list-meta').textContent = `${topic.name} · ${items.length} items`;
   $('#list').innerHTML = items.map((i) => rowHTML(i, {
     extra: `<div class="why">matched ${esc((i.matched || []).join(' · '))}</div>`,
@@ -139,10 +150,12 @@ async function openTopic(id) {
 }
 
 async function showDigest(id, period = 'day') {
+  const token = mark(`#/digest/${id}/${period}`);
   $('#reader-actions').classList.add('hidden');
   $('#reader').innerHTML = `<div class="art-body"><p class="dim">
     Selecting deterministically, then summarising…</p></div>`;
   const d = await api(`/api/topics/${id}/digest?period=${period}`);
+  if (token !== state.screenToken) return;
   const st = d.stats || {};
   $('#reader').innerHTML = `
     <div class="art-body">
@@ -175,6 +188,7 @@ async function showDigest(id, period = 'day') {
 }
 
 async function showSources() {
+  mark('#/sources');
   const [{ sources }, health] = await Promise.all([
     api('/api/sources'), api('/api/health'),
   ]);
@@ -194,6 +208,22 @@ async function showSources() {
         <button class="mini-btn" id="btn-src-add">Add</button>
       </div>
       <div id="src-add-out" class="dim"></div>
+      <h3 class="sec-h">Find feeds with the model</h3>
+      <div class="field-note">Describe a subject. The local model names
+        publications that cover it; each is then checked on the live web for a
+        real RSS feed whose recent posts match. A news-search feed and an
+        academic query are tried too. Nothing is added until you tick it.</div>
+      <div class="add-box">
+        <input id="src-find" placeholder="e.g. lithium supply contracts, GLP-1 pricing, EU chip subsidies">
+        <button class="mini-btn" id="btn-src-find">Find feeds</button>
+      </div>
+      <h3 class="sec-h">Move feeds between readers</h3>
+      <div class="form-btns" style="margin-bottom:6px">
+        <a class="mini-btn" href="/api/opml" download="agentfeed-feeds.opml">Export OPML</a>
+        <label class="mini-btn" style="cursor:pointer">Import OPML…
+          <input type="file" id="opml-file" accept=".opml,.xml,text/xml" hidden></label>
+        <span id="opml-out" class="dim"></span>
+      </div>
       <div class="field-note">
         Turning a source off keeps everything it already collected. Removing it
         keeps the articles too, and only stops future fetches.
@@ -204,8 +234,8 @@ async function showSources() {
           <div class="src-row">
             <input type="checkbox" ${s.enabled ? 'checked' : ''} data-toggle-src="${s.id}">
             <div class="src-name">
-              <b>${esc(s.name)}</b>
-              <span><a href="${esc(s.url)}" target="_blank">${esc(s.config?.query || s.url)}</a></span>
+              <b>${typeBadge(s.source_type, s.source_type_label)} <span class="linkish" data-node-type="source" data-node-id="${s.id}">${esc(s.name)}</span></b>
+              <span><a href="${esc(s.url)}" target="_blank">${esc(s.config?.query || s.config?.search || s.url)}</a></span>
             </div>
             <span class="src-badge ${s.failing ? 'bad' : (s.last_status === 'ok' ? 'ok' : '')}"
                   title="${esc(s.last_error || '')}">${s.failing ? 'failing' : (s.last_status || 'new')}</span>
@@ -218,7 +248,11 @@ async function showSources() {
 }
 
 async function showStatus() {
-  const h = await api('/api/health');
+  mark('#/status');
+  const [h, exp, optins] = await Promise.all([
+    api('/api/health'),
+    api('/api/settings/export-dir').catch(() => ({ path: '' })),
+    api('/api/optins').catch(() => null)]);
   const llm = h.llm || {};
   const b = llm.budget || {};
   $('#reader-actions').classList.add('hidden');
@@ -256,6 +290,20 @@ async function showStatus() {
       : `<div class="disclaimer"><b>No model runtime is answering.</b><br>
          ${esc(llm.error || '')}</div>`}
 
+      <div id="status-ext"></div>
+
+      ${optins ? optinsHTML(optins) : ''}
+
+      <h3 class="sec-h">Exports</h3>
+      <div class="field-note">Answers, analyses and collections export as
+        Markdown or PDF into one folder per collection, named
+        <code>date_kind_title_ref</code> so they sort by date and grep by subject.</div>
+      <div class="add-box">
+        <input id="export-dir" value="${esc(exp.path)}">
+        <button class="mini-btn" id="btn-export-dir">Change</button>
+        <button class="mini-btn" id="btn-export-open">Open folder</button>
+      </div>
+
       <h3 class="sec-h">Agent protocol</h3>
       <dl class="kv">
         <dt>Discovery</dt><dd>${esc(h.feed.base_url)}/.well-known/agent-feed</dd>
@@ -264,6 +312,33 @@ async function showStatus() {
       <div class="field-note">Run <code>agentfeed doctor</code> for the same
         checks in the terminal, plus label/pack mismatch detection.</div>
     </div>`;
+  runHooks('status', { panel: $('#status-ext') });
+}
+
+// Google News and DuckDuckGo are someone else's services with their own
+// terms, so AgentFeed only goes to them once the reader says so.
+function optinsHTML(d) {
+  return `<h3 class="sec-h">Web search services</h3>
+    <div class="field-note">Off until you turn them on. Publishers' own RSS
+      feeds and research indexes never need these.</div>
+    ${d.services.map((x) => `<label class="optin">
+      <input type="checkbox" data-optin="${esc(x.key)}" ${x.enabled ? 'checked' : ''}>
+      <span><b>${esc(x.label)}</b><span class="dim">${esc(x.what)}
+        <a href="${esc(x.terms)}" target="_blank" rel="noopener">Terms</a></span></span>
+    </label>`).join('')}`;
+}
+
+const OPTIN_NAMES = { google_news: 'Google News', duckduckgo: 'DuckDuckGo' };
+
+// When a source search ran without them, say so -- and offer to turn them
+// on and look again, rather than leave the list short without a reason.
+function skippedHTML(skipped, retry) {
+  if (!(skipped || []).length) return '';
+  const names = skipped.map((k) => OPTIN_NAMES[k] || k).join(' and ');
+  return `<div class="field-note">${esc(names)} ${skipped.length > 1 ? 'were' : 'was'} not
+    searched — they are off until you turn them on.
+    <button class="link-btn" data-optin-retry="${esc(skipped.join(','))}"
+            data-retry="${esc(retry)}">Turn on and search again</button></div>`;
 }
 
 // The box takes a site ("techcrunch", a URL) and guesses a domain for it.
@@ -424,6 +499,7 @@ function renderScout(res, origin) {
     openModal('No sources found', `
       <p>${esc(res.reason || 'Nothing found.')}</p>
       ${res.terms ? `<p class="dim">Looked for: ${esc(res.terms.join(', '))}</p>` : ''}
+      ${skippedHTML(res.skipped, origin.mode === 'topic' ? `topic:${origin.topicId}` : `subject:${res.subject || ''}`)}
       <div class="form-btns"><button class="mini-btn" id="scout-close">Close</button></div>`);
     return;
   }
@@ -436,7 +512,7 @@ function renderScout(res, origin) {
       <label class="scout-row">
         <input type="checkbox" data-sugg="${i}" ${x.hits > 1 ? 'checked' : ''}>
         <div class="scout-body">
-          <b>${esc(x.name)}</b>
+          <b>${typeBadge(x.source_type, x.source_type_label)} ${esc(x.name)}</b>
           <span class="scout-why">${esc(x.why)}</span>
           <span class="scout-url">${esc(x.url)}</span>
           ${(x.samples || []).length ? `<ul class="scout-samples">${
@@ -445,6 +521,7 @@ function renderScout(res, origin) {
       </label>`).join('')}
     ${res.model_error ? `<p class="dim">The local model was not available
       (${esc(res.model_error)}), so only the web search leg ran.</p>` : ''}
+    ${skippedHTML(res.skipped, origin.mode === 'topic' ? `topic:${origin.topicId}` : `subject:${res.subject || ''}`)}
     <div class="form-btns">
       <button class="primary-btn" id="scout-add">Add selected and fetch</button>
       <button class="mini-btn" id="scout-close">Cancel</button>
@@ -508,6 +585,7 @@ function readFacetPicker() {
 // "find sources", then "fetch". Each of those was a step the person had to
 // know about, and not one of them was their idea.
 function showTopicForm(id = null) {
+  mark(id ? `#/topic/edit/${id}` : '#/topic/new');
   const t = id ? state.topics.find((x) => String(x.id) === String(id)) : null;
   state.topic = null;
   state.draft = t ? { ...(t.rule || {}) } : null;
@@ -697,6 +775,8 @@ async function boot0() {
 }
 
 async function boot() {
+  applyTheme(document.documentElement.dataset.theme);
+  api('/api/theme').then((t) => applyTheme(t.theme)).catch(() => {});
   const h = await api('/api/health');
   state.domain = h.domain;
   $('#domain-label').textContent = `${h.counts.items} items`;
@@ -704,16 +784,54 @@ async function boot() {
   const d = await api('/api/domain');
   state.domain = d;
   await loadLanguages();
-  renderFacetNav(d);
   await loadTopics();
   await loadCollections();
-  await loadList();
+  loadResearch();
+  await loadFeeds();
+
+  // Put the list back the way it was left: the same topic, collection,
+  // feed or filters.
+  const saved = savedListState();
+  const known = (list, id) => id && list.some((x) => String(x.id) === String(id));
+  if (saved && known(state.topics, saved.topic)) {
+    renderFacetNav(d);
+    await openTopic(saved.topic);
+  } else if (saved && known(state.collections, saved.collection)) {
+    renderFacetNav(d);
+    await openCollection(saved.collection, '', { quiet: true });
+  } else {
+    if (saved) { state.view = saved.view || 'latest'; state.filters = saved.filters || {}; }
+    $$('.nav-item[data-view]').forEach((n) => n.classList.toggle('active', n.dataset.view === state.view));
+    renderFacetNav(d);
+    await loadList();
+    loadFeeds();
+  }
+
+  // ...and the reader: the screen that was open, whether it was an
+  // article, an answer or an analysis.
+  let screen = location.hash;
+  if (!screen || screen === '#/') {
+    try { screen = localStorage.getItem('agentfeed.screen') || ''; } catch (_) { screen = ''; }
+    if (screen && screen !== '#/') history.replaceState(null, '', screen);
+  }
+  if (screen && screen !== '#/') {
+    try { await dispatch(screen); }
+    catch (_) { clearReader(); }       // it was deleted since; not an error worth showing
+  }
   try { localStorage.setItem('agentfeed.lastSeen', new Date().toISOString()); }
   catch (_) { /* cosmetic */ }
+
+  // A fresh install with nothing to follow starts with the one question
+  // that matters rather than an empty three-pane reader.
+  let onboarded = false;
+  try { onboarded = localStorage.getItem('agentfeed.onboarded') === '1'; } catch (_) { /* first run */ }
+  if (!h.counts.topics && !onboarded) await showOnboarding();
 }
 
 function renderFacetNav(d) {
-  $('#facet-groups').innerHTML = d.facets.map((f) => `
+  // Where it came from comes first: RSS, research, web searches.
+  const facets = [{ key: 'source_types', label: 'Source type' }, ...d.facets];
+  $('#facet-groups').innerHTML = facets.map((f) => `
     <section class="nav-group">
       <h3 class="nav-title collapsible" data-toggle>${esc(f.label)}</h3>
       <div class="nav-body collapsed" id="facet-${esc(f.key)}"></div>
@@ -723,8 +841,12 @@ function renderFacetNav(d) {
 
 async function loadFacetCounts() {
   //  `unread` is a filter, not a facet; the facet endpoint refuses unknown keys.
-  const { unread: _u, ...facetsOnly } = state.filters;
-  const counts = await api('/api/facets', { method: 'POST', body: { facets: facetsOnly, days: 120 } });
+  const body = { ...queryFilters(), days: 120 };
+  const [counts, types] = await Promise.all([
+    api('/api/facets', { method: 'POST', body }),
+    api('/api/source-types', { method: 'POST', body }),
+  ]);
+  counts.source_types = types.source_types;
   for (const [key, rows] of Object.entries(counts)) {
     const el = $(`#facet-${key}`);
     if (!el) continue;
@@ -738,7 +860,8 @@ async function loadFacetCounts() {
     el.innerHTML = shown.map((r) => `
       <div class="nav-item ${selected.includes(r.value) ? 'active' : ''}"
            data-facet="${esc(key)}" data-value="${esc(r.value)}">
-        <span class="nav-label">${esc(labelFor(key, r.value))}</span>
+        <span class="nav-label">${key === 'source_types'
+          ? `${typeBadge(r.value, r.label)} ${esc(r.label)}` : esc(labelFor(key, r.value))}</span>
         <span class="nav-count">${r.count}</span>
       </div>`).join('')
       + (rows.length > 14 ? `<div class="nav-item more" data-more="${esc(key)}">
@@ -748,12 +871,19 @@ async function loadFacetCounts() {
 }
 
 function labelFor(key, value) {
+  if (key === 'source_types') return TYPE_LABEL[value] || value;
+  if (key === 'source_ids') {
+    const s = state.sources.find((x) => String(x.id) === String(value));
+    return s ? s.name : `source ${value}`;
+  }
+  if (key === 'entities') return String(value).replace(/_/g, ' ');
   const f = (state.domain?.facets || []).find((x) => x.key === key);
   const t = f?.terms?.find((x) => x.id === value);
   return t ? t.label : value.replace(/_/g, ' ');
 }
 
 function facetLabel(key) {
+  if (key in FILTER_NAMES) return FILTER_NAMES[key];
   const f = (state.domain?.facets || []).find((x) => x.key === key);
   return f ? f.label : key;
 }
@@ -762,7 +892,8 @@ function facetLabel(key) {
 // separate facets are AND'd, and neither was visible before.
 function renderFilterBar() {
   const bar = $('#filter-bar');
-  const keys = Object.keys(state.filters).filter((k) => state.filters[k]?.length);
+  const keys = Object.keys(state.filters).filter((k) => Array.isArray(state.filters[k])
+                                                  && state.filters[k].length);
   if (!keys.length) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
   bar.classList.remove('hidden');
   bar.innerHTML = keys.map((k, i) => `
@@ -814,19 +945,22 @@ async function refreshUnreadCount() {
 async function toggleFilter(facet, value) {
   leaveTopic(); leaveCollection();
   const cur = state.filters[facet] || [];
-  state.filters[facet] = cur.includes(value)
-    ? cur.filter((v) => v !== value) : [...cur, value];
+  // Compared as text: feed ids are numbers in state, strings in the DOM.
+  const has = cur.some((v) => String(v) === String(value));
+  state.filters[facet] = has
+    ? cur.filter((v) => String(v) !== String(value)) : [...cur, value];
   if (!state.filters[facet].length) delete state.filters[facet];
   await loadList();
   // Counts are conditional on the other filters, so they have to follow.
   await loadFacetCounts();
+  if (facet === 'source_ids') loadFeeds();
 }
 
 async function loadList() {
   $('#list-meta').textContent = 'Loading…';
-  const { unread, ...facets } = state.filters;
+  saveListState();
   const body = {
-    text: state.text, facets, unread: !!unread, limit: 100,
+    text: state.text, ...queryFilters(), limit: 100,
     sort: state.view === 'top' ? 'impact' : 'newest',
     days: state.view === 'top' ? 120 : null,
   };
@@ -865,11 +999,12 @@ async function loadCollections() {
     </div>`).join('') || '<div class="nav-item dim">None yet — press +</div>';
 }
 
-async function openCollection(id, text = '') {
+async function openCollection(id, text = '', opts = {}) {
   const q = text ? `&text=${encodeURIComponent(text)}` : '';
   const d = await api(`/api/collections/${id}/items?limit=100${q}`);
   state.collection = String(id);
   state.topic = null;
+  saveListState();
   $$('.topic-row, .nav-item[data-view]').forEach((n) => n.classList.remove('active'));
   $$('.coll-row').forEach((n) =>
     n.classList.toggle('active', n.dataset.collection === String(id)));
@@ -883,7 +1018,7 @@ async function openCollection(id, text = '') {
       <p class="dim">Star an article with ☆ and it lands here.</p></div>`;
   // The reader shows what you can do with the collection, not an empty pane:
   // summarise it, ask it, or resume a saved conversation.
-  if (!text && d.items.length) await askCollection(id, '');
+  if (!text && d.items.length && !opts.quiet) await askCollection(id, '');
 }
 
 async function newCollection() {
@@ -938,15 +1073,18 @@ function saveToPicker(itemId) {
 // matched — so the selection is still deterministic, inside the collection.
 async function askCollection(id, question, opts = {}) {
   const c = state.collections.find((x) => String(x.id) === String(id)) || {};
+  const token = mark(`#/ask/${id}`);
   $('#reader-actions').classList.add('hidden');
   if (String(state.thread.collection) !== String(id)) {
     state.thread = { collection: String(id), answers: [] };
   }
   if (!question && !opts.summary) {
     const { answers } = await api(`/api/collections/${id}/answers`);
+    if (token !== state.screenToken) return;
     $('#reader').innerHTML = `
       <div class="art-body">
-        <h2>“${esc(c.name)}”</h2>
+        <div class="screen-bar"><h2>“${esc(c.name)}”</h2><span class="spacer"></span>
+          ${c.count ? exportBar('collection', id) : ''}</div>
         <div class="field-note">Answered from the ${c.count || 0} article(s)
           you saved here and nothing else. Your notes on <i>why</i> you saved
           each one are read as your priorities. Every finding cites the items
@@ -983,12 +1121,32 @@ async function askCollection(id, question, opts = {}) {
     <p class="dim">${opts.summary ? 'Newest first, your notes leading.'
       : 'Ranking what you saved against the question.'} Then one call to the
       local model. This takes a moment.</p></div>`;
-  const d = opts.summary
-    ? await api(`/api/collections/${id}/summary`, { method: 'POST' })
-    : await api(`/api/collections/${id}/ask`, { method: 'POST',
-                                                body: { question, history } });
+  // The question keeps running if the reader moves on. When it lands, it is
+  // shown only if nobody navigated away; otherwise it waits in Research and
+  // a toast says it is ready -- it is never painted over whatever is open.
+  const job = { id: `ask-${Date.now()}`, kind: 'answer',
+                label: opts.summary ? `Summary of ${c.name}` : question };
+  state.pending.push(job); renderResearchNav();
+  let d;
+  try {
+    d = opts.summary
+      ? await api(`/api/collections/${id}/summary`, { method: 'POST' })
+      : await api(`/api/collections/${id}/ask`, { method: 'POST',
+                                                  body: { question, history } });
+  } finally {
+    state.pending = state.pending.filter((x) => x !== job);
+    loadResearch();
+  }
   if (d.ok && d.id) state.thread.answers.push({ id: d.id, question: d.question,
                                                 answer: (d.answer || {}).answer });
+  if (token !== state.screenToken) {
+    if (d.ok && d.id) {
+      toast(`Answer ready: “${String(d.question).slice(0, 48)}”`, 9000,
+            { label: 'Open', fn: () => openAnswer(d.id) });
+    }
+    return;
+  }
+  if (d.ok && d.id) history.replaceState(null, '', `#/answer/${d.id}`);
   renderAnswer(d);
 }
 
@@ -1021,13 +1179,15 @@ function threadHTML() {
 // parent links back to the root, so "and which of those…" still has its
 // "those", and the next question continues the thread rather than starting one.
 async function openAnswer(answerId) {
+  const token = mark(`#/answer/${answerId}`);
   const chain = [];
   let id = answerId;
   for (let i = 0; i < 12 && id; i++) {
     const a = await api(`/api/answers/${id}`);
     chain.unshift(a);
-    id = (a.stats || {}).parent_id;
+    id = a.parent_id || (a.stats || {}).parent_id;
   }
+  if (token !== state.screenToken) return;
   const a = chain[chain.length - 1];
   state.thread = { collection: String(a.collection_id),
                    answers: chain.map((x) => ({ id: x.id, question: x.question,
@@ -1052,7 +1212,9 @@ function renderAnswer(d) {
   if (d.id) setBack(`answer: ${d.question}`, () => openAnswer(d.id));
   $('#reader').innerHTML = `
     <div class="art-body">
-      <button class="mini-btn" data-ask-coll="${d.collection_id}">← Ask another</button>
+      <div class="screen-bar">
+        <button class="mini-btn" data-ask-coll="${d.collection_id}">← Ask another</button>
+        <span class="spacer"></span>${d.id ? exportBar('answer', d.id) : ''}</div>
       <h2>${esc(d.question)}</h2>
       ${state.thread.answers.length > 1 && String(state.thread.collection) === String(d.collection_id)
         ? threadHTML() : ''}
@@ -1078,7 +1240,7 @@ function renderAnswer(d) {
       ${(d.cited || []).map((ci) => `
         <div class="src-row"><div class="src-name">
           <b><span class="linkish" data-item="${ci.id}">[${ci.id}] ${esc(ci.headline)}</span></b>
-          <span>${esc(ci.source)} · ${esc(ci.published)} ·
+          <span>${typeBadge(ci.source_type)} ${esc(ci.source)} · ${esc(ci.published)} ·
             <a href="${esc(ci.url)}" target="_blank" rel="noopener">open original ↗</a></span>
         </div></div>`).join('') || '<p class="dim">Nothing survived citation-checking.</p>'}
       <div class="dim" style="margin-top:12px">${esc(d.model || '')}${
@@ -1090,7 +1252,9 @@ function renderAnswer(d) {
           <button class="primary-btn" data-ask-go="${d.collection_id}">Ask</button>
           <button class="mini-btn" data-ask-coll="${d.collection_id}">Start over</button>
         </div></div>` : ''}
+      <div id="conn-slot"></div>
     </div>`;
+  if (d.id) loadConnections('answer', d.id);
 }
 
 /* ── one row, everywhere ──────────────────────────────────── */
@@ -1109,6 +1273,7 @@ function rowHTML(i, opts = {}) {
       <div class="row-top">
         ${i.unread ? '<span class="unread-dot" title="Unread"></span>' : ''}
         ${fresh ? '<span class="new-pill">new</span>' : ''}
+        ${typeBadge(i.source_type, i.source_type_label)}
         <span class="row-src">${esc(i.source_name || '')}</span>
         <span class="${i.published_at ? '' : 'undated'}">${esc(whenOf(i))}</span>
         <span class="impact">${i.impact_score ? Math.round(i.impact_score) : ''}</span>
@@ -1137,6 +1302,7 @@ function rowHTML(i, opts = {}) {
 
 /* ── reader ───────────────────────────────────────────────── */
 async function openItem(id) {
+  mark(`#/item/${id}`);
   state.active = id; state.showOriginal = false;
   $$('.row').forEach((r) => {
     r.classList.toggle('active', r.dataset.id == id);
@@ -1159,7 +1325,7 @@ async function openItem(id) {
 function renderReader(it) {
   const foreign = it.lang && it.lang !== 'en';
   const body = state.showOriginal ? (it.text || '') : (it.text_en || it.text || '');
-  const meta = [it.source_name, whenOf(it), it.item_type,
+  const meta = [it.source_name, it.source_type_label, whenOf(it), it.item_type,
                 it.impact_score ? `impact ${Math.round(it.impact_score)}` : '']
     .filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join('<span>·</span>');
   const claims = (it.claims && typeof it.claims === 'string' ? JSON.parse(it.claims) : it.claims) || [];
@@ -1181,9 +1347,11 @@ function renderReader(it) {
       ${foreign ? `<div class="trans-bar"><span>${state.showOriginal ? 'Showing the'
         : 'Translated from'} <b>${esc(it.lang)}</b> original.</span></div>` : ''}
       ${body ? `<div class="art-text">${esc(body)}</div>` : ''}
-    </div>`;
+    </div>
+    <div id="conn-slot"></div>`;
   $('#reader').scrollTop = 0;
   loadAbstract(it);
+  loadConnections('item', it.id);
 }
 
 /* ── abstract ─────────────────────────────────────────────── */
@@ -1235,6 +1403,7 @@ async function loadAbstract(it) {
 
 /* ── subscriptions ────────────────────────────────────────── */
 async function showSubscriptions() {
+  mark('#/agents');
   const [{ subscriptions }, cap, embed] = await Promise.all([
     api('/agentfeed/subscriptions'), api('/.well-known/agent-feed'),
     api('/agentfeed/embed'),
@@ -1378,7 +1547,9 @@ async function createSub() {
 }
 
 async function showSignals() {
+  const token = mark('#/signals');
   const { analyses } = await api('/api/analyses?limit=30');
+  if (token !== state.screenToken) return;
   $('#reader-actions').classList.add('hidden');
   state.back = null;
   $('#reader').innerHTML = `
@@ -1409,25 +1580,39 @@ async function showSignals() {
     </div>`;
 }
 
-async function newAnalysis() {
-  const entity = prompt('Analyse coverage for which entity? (blank = whole feed)');
+async function newAnalysis(preset) {
+  const entity = preset ?? prompt('Analyse coverage for which entity? (blank = whole feed)');
   if (entity === null) return;
+  const token = state.screenToken;
   $('#reader').innerHTML = `<div class="art-body"><h2>Analysing…</h2>
     <p class="dim">Selecting deterministically, then asking the local model.
-    This takes a minute.</p></div>`;
+    This takes a minute — you can keep reading; it will wait in Research.</p></div>`;
+  const job = { id: `sig-${Date.now()}`, label: entity || 'Whole feed', kind: 'analysis' };
+  state.pending.push(job); renderResearchNav();
   try {
     const d = await api('/api/signals', { method: 'POST',
       body: { entity, days: 120, limit: 30 } });
+    if (token !== state.screenToken) {
+      if (d.id) toast(`Analysis ready: ${entity || 'whole feed'}`, 9000,
+                      { label: 'Open', fn: () => openAnalysis(d.id) });
+      return;
+    }
     if (d.id) return openAnalysis(d.id);
     renderAnalysis(d);
   } catch (e) {
+    if (token !== state.screenToken) { toast('Analysis failed: ' + e.message, 6000); return; }
     $('#reader').innerHTML = `<div class="art-body">
       <div class="disclaimer">Could not analyse: ${esc(e.message)}</div></div>`;
+  } finally {
+    state.pending = state.pending.filter((x) => x !== job);
+    loadResearch();
   }
 }
 
 async function openAnalysis(id) {
+  const token = mark(`#/analysis/${id}`);
   const d = await api(`/api/analyses/${id}`);
+  if (token !== state.screenToken) return;
   renderAnalysis({ ...d, report: d.report, cited_items: d.cited,
                    items_considered: d.stats?.items_considered ?? 0,
                    direction_counts: d.stats?.direction_counts ?? {} });
@@ -1476,7 +1661,9 @@ function renderAnalysis(d) {
   $('#reader-actions').classList.add('hidden');
   $('#reader').innerHTML = `
     <div class="art-body">
-      <button class="mini-btn" id="btn-all-analyses">← All analyses</button>
+      <div class="screen-bar">
+        <button class="mini-btn" id="btn-all-analyses">← All analyses</button>
+        <span class="spacer"></span>${d.id ? exportBar('analysis', d.id) : ''}</div>
       <h2>${esc(d.subject)} ${saved}</h2>
       <div class="dim">${d.items_considered} items · last ${d.days} days${
         d.model ? ' · ' + esc(d.model) : ''}</div>
@@ -1500,10 +1687,509 @@ function renderAnalysis(d) {
       ${(d.cited_items || []).map((ci) => `
         <div class="src-row"><div class="src-name">
           <b><span class="linkish" data-item="${ci.id}">[${ci.id}] ${esc(ci.headline)}</span></b>
-          <span>${esc(ci.source)} · ${esc(ci.published)} ·
+          <span>${typeBadge(ci.source_type)} ${esc(ci.source)} · ${esc(ci.published)} ·
             <a href="${esc(ci.url)}" target="_blank" rel="noopener">open original ↗</a></span>
         </div></div>`).join('') || '<p class="dim">No citations survived verification.</p>'}
     </div>`;
+}
+
+/* ── where it came from ───────────────────────────────────── */
+// Every row, article, citation and source says what kind of origin it has:
+// an RSS feed, an academic index, a scraped page, a web search. A reader
+// weighs a peer-reviewed abstract and a search hit differently, and could
+// not tell them apart before.
+const TYPE_SHORT = { rss: 'RSS', academic: 'Academic', web: 'Web', search: 'Search',
+                     agent: 'Agent', manual: 'Manual' };
+const TYPE_LABEL = { rss: 'RSS feeds', academic: 'Academic', web: 'Web pages',
+                     search: 'Web searches', agent: 'Agent feeds', manual: 'Added by hand' };
+const FILTER_NAMES = { source_types: 'Source type', source_ids: 'Feed', entities: 'Organisation' };
+
+function typeBadge(type, label) {
+  if (!type) return '';
+  return `<span class="src-type t-${esc(type)}" title="${esc(label || TYPE_LABEL[type] || type)}">${
+    esc(TYPE_SHORT[type] || type)}</span>`;
+}
+
+// The filters, split the way the API wants them: facets in one map, the
+// rest as their own fields. `source_ids` is not a facet, and the facet
+// endpoint rightly refuses keys it does not know.
+function queryFilters() {
+  const { unread, source_types: types, source_ids: ids, ...facets } = state.filters;
+  return { facets, unread: !!unread, source_types: types || [],
+           source_ids: (ids || []).map(Number) };
+}
+
+/* ── screens and history ──────────────────────────────────── */
+// Every reader screen has an address. Following a citation, opening the
+// Sources panel, or quitting the app no longer loses the answer you were
+// reading: back returns to it, and a restart reopens it.
+const ROUTES = [
+  [/^#\/item\/(\d+)$/, (m) => openItem(m[1])],
+  [/^#\/answer\/(\d+)$/, (m) => openAnswer(m[1])],
+  [/^#\/analysis\/(\d+)$/, (m) => openAnalysis(m[1])],
+  [/^#\/ask\/(\d+)$/, (m) => askCollection(m[1], '')],
+  [/^#\/digest\/(\d+)\/(\w+)$/, (m) => showDigest(m[1], m[2])],
+  [/^#\/node\/(\w+)\/(.+)$/, (m) => showNode(m[1], window.decodeURIComponent(m[2]))],
+  [/^#\/sources$/, () => showSources()],
+  [/^#\/status$/, () => showStatus()],
+  [/^#\/signals$/, () => showSignals()],
+  [/^#\/agents$/, () => showSubscriptions()],
+  [/^#\/research$/, () => showResearch()],
+  [/^#\/topic\/new$/, () => showTopicForm()],
+  [/^#\/topic\/edit\/(\d+)$/, (m) => showTopicForm(m[1])],
+];
+
+// Called first thing by every screen. Records the address (a new history
+// entry, unless we got here by going back) and returns a token the screen
+// checks after each await: if it changed, the reader moved on meanwhile.
+function mark(hash) {
+  state.screenToken += 1;
+  if (!state.routing && location.hash !== hash && !(hash === '#/' && !location.hash)) {
+    history.pushState(null, '', hash);
+  }
+  try { localStorage.setItem('agentfeed.screen', hash); } catch (_) { /* cosmetic */ }
+  return state.screenToken;
+}
+
+async function dispatch(hash) {
+  for (const [re, fn] of ROUTES) {
+    const m = (hash || '').match(re);
+    if (!m) continue;
+    // Screens call mark() before their first await, so the flag only has to
+    // cover the synchronous start -- clicks during a slow load still count.
+    state.routing = true;
+    let pr;
+    try { pr = fn(m); } finally { state.routing = false; }
+    await pr;
+    return true;
+  }
+  return false;
+}
+
+window.addEventListener('popstate', () => {
+  dispatch(location.hash).then((ok) => {
+    if (!ok) { state.routing = true; try { clearReader(); } finally { state.routing = false; } }
+  }).catch((err) => toast('Could not reopen that: ' + err.message, 5000));
+});
+
+function saveListState() {
+  try {
+    localStorage.setItem('agentfeed.list', JSON.stringify({
+      view: state.view, topic: state.topic, collection: state.collection,
+      filters: state.filters }));
+  } catch (_) { /* cosmetic */ }
+}
+
+function savedListState() {
+  try { return JSON.parse(localStorage.getItem('agentfeed.list') || 'null'); }
+  catch (_) { return null; }
+}
+
+/* ── theme ────────────────────────────────────────────────── */
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t || 'auto';
+  $$('[data-theme-set]').forEach((b) => b.classList.toggle('on', b.dataset.themeSet === (t || 'auto')));
+  try { localStorage.setItem('agentfeed.theme', t || 'auto'); } catch (_) { /* cosmetic */ }
+}
+
+async function setTheme(t) {
+  applyTheme(t);
+  // Kept server-side too: the desktop web view can lose its storage, the
+  // database does not.
+  await api('/api/theme', { method: 'POST', body: { theme: t } });
+}
+
+/* ── exports ──────────────────────────────────────────────── */
+function exportBar(kind, id) {
+  return `<span class="export-bar">Export
+    <button class="mini-btn" data-export="${kind}" data-export-id="${id}" data-fmt="md">Markdown</button>
+    <button class="mini-btn" data-export="${kind}" data-export-id="${id}" data-fmt="pdf">PDF</button></span>`;
+}
+
+// Written by the server into the export folder, one sub-folder per
+// collection, named date_kind_title_ref -- so a month of market notes sorts
+// itself. The toast says where it went and opens the folder on request.
+async function doExport(kind, id, fmt) {
+  toast(`Writing ${fmt === 'pdf' ? 'PDF' : 'Markdown'}…`);
+  const r = await api(`/api/export/${kind}/${id}?format=${fmt}`, { method: 'POST' });
+  toast(`Saved ${r.filename}`, 9000, {
+    label: 'Show in folder',
+    fn: () => api('/api/export/reveal', { method: 'POST', body: { path: r.path } }) });
+}
+
+/* ── connections: the graph around what is open ───────────── */
+const NODE_ICON = { entity: '◆', topic: '#', collection: '★', answer: '?',
+                    analysis: '◔', label: '⌗' };
+
+async function loadConnections(type, id) {
+  const token = state.screenToken;
+  let g;
+  try { g = await api(`/api/graph/${type}/${encodeURIComponent(id)}`); }
+  catch (_) { return; }
+  const slot = $('#conn-slot');
+  if (!slot || token !== state.screenToken) return;
+  // An answer's citations are already listed under "Sources cited".
+  const groups = g.edges.filter((e) => !(type === 'answer' && e.rel === 'cites'));
+  slot.innerHTML = groups.length ? `<div class="connections">
+      <h3 class="sec-h">Connected to</h3>${groups.map(connGroup).join('')}</div>` : '';
+}
+
+function connGroup(e) {
+  const list = ['item', 'answer', 'analysis'].includes(e.type);
+  return `<div class="conn-group"><span class="conn-key">${esc(e.label)}</span>
+    <div class="conn-nodes ${list ? 'conn-list' : ''}">${e.nodes.map(nodeChip).join('')}</div></div>`;
+}
+
+function nodeChip(n) {
+  const mark0 = n.source_type ? typeBadge(n.source_type)
+    : (NODE_ICON[n.type] ? `<span class="meta">${NODE_ICON[n.type]}</span>` : '');
+  return `<span class="conn-node" data-node-type="${esc(n.type)}" data-node-id="${esc(n.id)}"
+      title="${esc(n.meta || '')}">${mark0}<span class="lbl">${esc(n.label)}</span>${
+      n.meta ? `<span class="meta">${esc(n.meta)}</span>` : ''}</span>`;
+}
+
+async function openNode(type, id) {
+  if (type === 'item') return openItem(id);
+  if (type === 'answer') return openAnswer(id);
+  if (type === 'analysis') return openAnalysis(id);
+  if (type === 'topic') return openTopic(id);
+  if (type === 'collection') return openCollection(id);
+  if (type === 'label') return filterByNode('label', id);
+  return showNode(type, id);
+}
+
+// A page for a source or an organisation: what it connects to, and a way to
+// read everything under it.
+async function showNode(type, id) {
+  const token = mark(`#/node/${type}/${encodeURIComponent(id)}`);
+  $('#reader-actions').classList.add('hidden');
+  const [g, extra] = await Promise.all([
+    api(`/api/graph/${type}/${encodeURIComponent(id)}?limit=12`),
+    type === 'source' ? api('/api/sources')
+      : api(`/api/entities?q=${encodeURIComponent(String(id).replace(/_/g, ' '))}&limit=20`),
+  ]);
+  if (token !== state.screenToken) return;
+  let title = String(id).replace(/_/g, ' ');
+  let sub = '';
+  let actions = '';
+  if (type === 'source') {
+    state.sources = extra.sources;
+    const s = extra.sources.find((x) => String(x.id) === String(id));
+    if (s) {
+      title = s.name;
+      sub = `${typeBadge(s.source_type, s.source_type_label)} ${esc(s.source_type_label)} ·
+        <a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a> ·
+        ${s.items_total} items · ${s.unread} unread`;
+    }
+    actions = `<button class="primary-btn" style="width:auto" data-feed="${esc(id)}">Read this feed</button>`;
+  } else if (type === 'entity') {
+    const e = extra.entities.find((x) => x.key === id);
+    if (e) { title = e.name; sub = `${e.count} article(s) name it`; }
+    actions = `<button class="primary-btn" style="width:auto" data-filter-node="entity"
+                 data-node-key="${esc(id)}">Show every article</button>
+               <button class="mini-btn" data-signal-entity="${esc(title)}">Analyse coverage</button>`;
+  }
+  $('#reader').innerHTML = `<div class="art-body">
+      ${backBar()}
+      <div class="dim">${esc(type === 'entity' ? 'Organisation' : 'Source')}</div>
+      <h2>${esc(title)}</h2>
+      ${sub ? `<div class="art-meta" style="margin:4px 0 12px">${sub}</div>` : ''}
+      <div class="form-btns">${actions}</div>
+      <div class="connections">${g.edges.map(connGroup).join('')
+        || '<p class="dim">Nothing connected yet.</p>'}</div>
+    </div>`;
+}
+
+async function filterByNode(type, key) {
+  leaveTopic(); leaveCollection();
+  if (type === 'entity') state.filters = { entities: [key] };
+  else {
+    const i = String(key).indexOf(':');
+    state.filters = { [key.slice(0, i)]: [key.slice(i + 1)] };
+  }
+  $$('.nav-item').forEach((n) => n.classList.remove('active'));
+  await loadList();
+  await loadFacetCounts();
+}
+
+/* ── research history ─────────────────────────────────────── */
+async function loadResearch() {
+  try { state.research = await api('/api/research?limit=40'); }
+  catch (_) { state.research = { threads: [], analyses: [] }; }
+  renderResearchNav();
+}
+
+function renderResearchNav() {
+  const r = state.research || { threads: [], analyses: [] };
+  const done = [
+    ...r.threads.map((t) => ({ kind: 'answer', id: t.last_id, label: t.question,
+                               when: t.updated_at, pinned: t.pinned, meta: t.collection })),
+    ...r.analyses.map((a) => ({ kind: 'analysis', id: a.id, label: a.subject || 'Whole feed',
+                                when: a.created_at, pinned: a.pinned, meta: a.call || '' })),
+  ].sort((x, y) => (Number(y.pinned) - Number(x.pinned))
+                   || String(y.when).localeCompare(String(x.when))).slice(0, 7);
+  $('#research-list').innerHTML = [
+    ...state.pending.map((p) => `<div class="nav-item" title="Still being written">
+        <span class="pending-dot"></span><span class="nav-label dim">${esc(p.label)}</span></div>`),
+    ...done.map((x) => `<div class="nav-item" data-research-${x.kind}="${x.id}"
+        title="${esc(x.meta)}"><span class="nav-ico">${x.kind === 'answer' ? '?' : '◔'}</span>
+        <span class="nav-label">${esc(x.label)}</span></div>`),
+  ].join('') || '<div class="nav-item dim">Questions you ask appear here</div>';
+}
+
+async function showResearch() {
+  const token = mark('#/research');
+  $('#reader-actions').classList.add('hidden');
+  const r = await api('/api/research?limit=200');
+  if (token !== state.screenToken) return;
+  $('#reader').innerHTML = `<div class="art-body">
+      <h2>Research</h2>
+      <div class="field-note">Every question asked of a collection and every
+        coverage analysis, kept. Open one to read or continue it; export it to
+        send it on. Pinned ones stay at the top.</div>
+      ${state.pending.map((p) => `<div class="research-row"><span class="pending-dot"></span>
+        <div class="src-name"><b>${esc(p.label)}</b><span>still being written…</span></div></div>`).join('')}
+      <h3 class="sec-h">Conversations (${r.threads.length})</h3>
+      ${r.threads.map((t) => `<div class="research-row">
+          <button class="mini-btn" data-pin-answer="${t.root_id}" data-pinned="${t.pinned ? 1 : 0}"
+                  title="${t.pinned ? 'Unpin' : 'Pin to the top'}">${t.pinned ? '★' : '☆'}</button>
+          <div class="src-name" data-research-answer="${t.last_id}">
+            <b>${esc(t.question)}</b>
+            <span>${esc(t.collection)} · ${t.turns} turn${t.turns === 1 ? '' : 's'} ·
+              ${esc((t.updated_at || '').slice(0, 16))}</span></div>
+          ${exportBar('answer', t.last_id)}</div>`).join('')
+        || '<p class="dim">No questions yet. Open a collection under Saved and ask one.</p>'}
+      <h3 class="sec-h">Analyses (${r.analyses.length})</h3>
+      ${r.analyses.map((a) => `<div class="research-row">
+          <span class="kind-tag">${a.pinned ? '★ ' : ''}signal</span>
+          <div class="src-name" data-research-analysis="${a.id}">
+            <b>${esc(a.subject || 'Whole feed')}</b>
+            <span>${a.call ? `<span class="call-chip ${esc(a.call)}">${
+              esc(CALL_LABEL[a.call] || a.call)}</span> · ` : ''}${
+              esc((a.created_at || '').slice(0, 16))} · last ${a.days} days</span></div>
+          ${exportBar('analysis', a.id)}</div>`).join('')
+        || '<p class="dim">None yet — use “Analyse coverage”.</p>'}
+    </div>`;
+}
+
+/* ── feeds: reading it as a feed reader ───────────────────── */
+async function loadFeeds() {
+  let sources = [];
+  try { ({ sources } = await api('/api/sources')); } catch (_) { return; }
+  state.sources = sources;
+  const on = sources.filter((s) => s.enabled)
+    .sort((a, b) => (b.unread - a.unread) || a.name.localeCompare(b.name));
+  const shown = state.feedsOpen ? on : on.slice(0, 10);
+  const sel = (state.filters.source_ids || []).map(String);
+  $('#feed-list').innerHTML = (shown.map((s) => `
+      <div class="nav-item ${sel.includes(String(s.id)) ? 'active' : ''}" data-feed="${s.id}"
+           title="${esc(s.source_type_label)} · ${esc(s.url)}">
+        ${typeBadge(s.source_type, s.source_type_label)}
+        <span class="nav-label">${esc(s.name)}</span>
+        ${s.unread ? `<span class="nav-count unread-count">${s.unread}</span>` : ''}
+      </div>`).join('')
+    + (on.length > 10 ? `<div class="nav-item more" data-feeds-more>${
+        state.feedsOpen ? 'show fewer' : `show all ${on.length}`}</div>` : ''))
+    || '<div class="nav-item dim">No feeds yet</div>';
+}
+
+// One feed on its own, newest first -- what a feed reader has always done.
+// Clicking the open feed again goes back to everything.
+async function readFeed(id) {
+  leaveTopic(); leaveCollection();
+  const cur = (state.filters.source_ids || []).map(String);
+  state.filters = (cur.length === 1 && cur[0] === String(id)) ? {} : { source_ids: [Number(id)] };
+  state.view = 'latest';
+  $$('.nav-item').forEach((n) => n.classList.remove('active'));
+  await loadList();
+  await loadFacetCounts();
+  loadFeeds();
+}
+
+/* ── onboarding: one sentence to a working reader ─────────── */
+const ONB_EXAMPLES = ['EV battery prices', 'GLP-1 drug market', 'Copper supply deals'];
+
+// One question, one box. Everything else on this screen is either a hint
+// (three examples) or the one fact that changes what happens next: which
+// model will do the reading -- with the built-in one a click away, whatever
+// else is installed.
+async function showOnboarding() {
+  const h = await api('/api/health');
+  const first = !h.counts.topics;
+  $('#onboard').innerHTML = `<div class="onb-card">
+      <img src="/static/mark.svg" width="30" height="30" alt="">
+      <h1>${first ? 'What do you want to track?' : 'Track another topic'}</h1>
+      <p class="lede">One sentence. AgentFeed finds feeds and research for it,
+        checks each one, and starts reading — you approve every source.</p>
+      <div class="onb-input">
+        <input id="onb-text" autocomplete="off" placeholder="e.g. lithium battery prices and supply contracts">
+        <button class="primary-btn" id="onb-go">Start</button>
+      </div>
+      <div class="onb-try">Try ${ONB_EXAMPLES.map((x) =>
+        `<button class="link-btn" data-onb-example="${esc(x)}">${esc(x)}</button>`).join(' · ')}</div>
+      <div id="onb-out"></div>
+      <div class="onb-model" id="onb-model">${onbModelHTML(h.llm || {})}</div>
+      <div class="onb-foot">
+        ${first ? '<button class="link-btn" id="onb-skip">Skip — I will add sources myself</button>'
+                : '<button class="link-btn" id="onb-close">Cancel</button>'}
+      </div>
+    </div>`;
+  $('#onboard').classList.remove('hidden');
+  runHooks('onboarding', { links: $('#onb-model .onb-links'), panel: $('#onb-ext'),
+                           llm: h.llm || {} });
+  setTimeout(() => $('#onb-text')?.focus(), 30);
+}
+
+// "Reading with …": the one fact on this screen that changes what happens
+// next. Extensions can add a link beside it and a panel under it.
+function onbModelHTML(llm) {
+  const row = llm.ok
+    ? `<span class="dot ok"></span><span>Reading with <b>${esc(llm.provider_label || 'a model server')}${
+        llm.chat_model ? ` · ${esc(llm.chat_model)}` : ''}</b></span>`
+    : '<span class="dot bad"></span><span>No model yet — topics will match your words only.</span>';
+  return `<div class="onb-model-row">${row}<span class="spacer"></span>
+      <span class="onb-links">${llm.ok ? '' : '<a class="link-btn" href="/welcome?stay=1">Connect Ollama or LM Studio</a>'}</span></div>
+    <div id="onb-ext"></div>`;
+}
+
+function closeOnboarding() {
+  $('#onboard').classList.add('hidden');
+  try { localStorage.setItem('agentfeed.onboarded', '1'); } catch (_) { /* cosmetic */ }
+}
+
+function stepsHTML(steps, active) {
+  return `<div class="steps">${(steps || []).map((x, i) => {
+    const now = active && i === steps.length - 1;
+    return `<div class="step ${now ? 'now' : 'done'}"><span class="step-mark">${now ? '◐' : '✓'}</span>
+      <span>${esc(x.text)}${x.detail ? `<span class="step-detail">${esc(x.detail)}</span>` : ''}</span></div>`;
+  }).join('')}</div>`;
+}
+
+async function onboardStart() {
+  const desc = ($('#onb-text').value || '').trim();
+  const out = $('#onb-out');
+  if (!desc) { $('#onb-text').focus(); return; }
+  $('#onb-go').disabled = true;
+  const r = await api('/api/topics/follow', { method: 'POST',
+    body: { description: desc, find_sources: true, scout_always: true } });
+  if (!r.ok) { out.innerHTML = `<p class="dim">${esc(r.reason)}</p>`; $('#onb-go').disabled = false; return; }
+  const s = await new Promise((done) => {
+    const t = setInterval(async () => {
+      let st;
+      try { st = await api('/api/topics/follow/status'); }
+      catch (err) { clearInterval(t); out.textContent = err.message; return done({}); }
+      out.innerHTML = stepsHTML(st.steps, st.active);
+      if (!st.active) { clearInterval(t); done(st); }
+    }, 900);
+  });
+  const res = s.result || {};
+  if (!res.ok) {
+    out.innerHTML += `<div class="disclaimer">${esc(res.reason || 'That did not work.')}</div>`;
+    $('#onb-go').disabled = false;
+    return;
+  }
+  state.onb = { topicId: res.topic_id, suggestions: res.suggestions || [] };
+  await loadTopics();
+  renderOnbSuggestions(res);
+}
+
+function renderOnbSuggestions(res) {
+  const out = $('#onb-out');
+  const sug = res.suggestions || [];
+  const skipped = skippedHTML(res.skipped, `topic:${res.topic_id}`);
+  if (!sug.length) {
+    out.innerHTML += `${skipped}<p>${res.matched ? `${res.matched} article(s) you already have match it.`
+        : 'No source checked out yet — add one you know by name from Sources, or try other words.'}</p>
+      <div class="form-btns"><button class="primary-btn" style="width:auto"
+        data-onb-open="${res.topic_id}">Open the topic</button></div>`;
+    return;
+  }
+  const groups = {};
+  sug.forEach((x, i) => (groups[x.source_type || 'web'] ||= []).push([x, i]));
+  out.innerHTML += `<h3 class="sec-h">Sources that cover it — each checked just now</h3>
+    ${Object.entries(groups).map(([t, list]) => `<div class="onb-sugg-group">
+      <h4>${esc(TYPE_LABEL[t] || t)}</h4>
+      ${list.map(([x, i]) => `<label class="scout-row">
+        <input type="checkbox" data-onb-sugg="${i}" ${x.hits > 1 || x.source_type === 'rss' ? 'checked' : ''}>
+        <div class="scout-body">
+          <b>${typeBadge(x.source_type, x.source_type_label)} ${esc(x.name)}</b>
+          <span class="scout-why">${esc(x.why)}</span>
+          <span class="scout-url">${esc(x.url)}</span>
+          ${(x.samples || []).length ? `<ul class="scout-samples">${
+            x.samples.map((h) => `<li>${esc(h)}</li>`).join('')}</ul>` : ''}
+        </div></label>`).join('')}</div>`).join('')}
+    ${skipped}
+    <div class="form-btns" style="margin-top:14px">
+      <button class="primary-btn" style="width:auto" id="onb-add">Add selected and start reading</button>
+      <button class="mini-btn" data-onb-open="${res.topic_id}">Skip</button>
+    </div>
+    <div id="onb-run" class="form-out"></div>`;
+}
+
+async function onboardAdopt() {
+  const picked = $$('[data-onb-sugg]').filter((c) => c.checked)
+    .map((c) => state.onb.suggestions[Number(c.dataset.onbSugg)]);
+  const run = $('#onb-run');
+  if (!picked.length) { run.textContent = 'Nothing selected.'; return; }
+  $('#onb-add').disabled = true;
+  const d = await api(`/api/topics/${state.onb.topicId}/adopt`, { method: 'POST',
+    body: { sources: picked.map((x) => ({ kind: x.kind, name: x.name, url: x.url,
+                                          config: x.config || {}, tags: ['scout'] })) } });
+  if (d.added.length) {
+    const r = await api('/api/run', { method: 'POST', body: { source_ids: d.added } });
+    if (!r.ok) { run.textContent = r.reason || 'Could not start fetching.'; }
+    else {
+      await new Promise((done) => {
+        const t = setInterval(async () => {
+          let st;
+          try { st = await api('/api/run/status'); }
+          catch (err) { clearInterval(t); run.textContent = err.message; return done(); }
+          run.innerHTML = `<div class="step now"><span class="step-mark">◐</span>
+            <span>${esc(st.stage || 'working')} — ${esc(st.message || '')}</span></div>`;
+          if (!st.active) { clearInterval(t); done(); }
+        }, 1000);
+      });
+    }
+  }
+  closeOnboarding();
+  await boot0();
+  await loadTopics();
+  await loadFacetCounts();
+  loadFeeds();
+  await openTopic(state.onb.topicId);
+  toast('Reading. New articles are filed into the topic as they arrive.', 5000);
+}
+
+/* ── the built-in model ───────────────────────────────────── */
+// Four sizes of one model. Each row says what it costs and whether this Mac
+// can hold it; the recommended one is the best quality that leaves half the
+// memory free. Pick, download (with progress), use.
+/* ── extensions ─────────────────────────────────────────── */
+// Optional packages (agentfeed/plugins.py) load their own script after this
+// one and add to two places: the model line on the onboarding screen, and a
+// section of Status. They get a small, stable surface rather than reaching
+// into this file's internals.
+window.AgentFeed = {
+  api: (...a) => api(...a),
+  esc: (x) => esc(x),
+  toast: (...a) => toast(...a),
+  refresh: () => { boot0(); refreshOnbModel(); },
+  hooks: { onboarding: [], status: [] },
+};
+
+function runHooks(name, ctx) {
+  for (const fn of window.AgentFeed.hooks[name] || []) {
+    try { fn(ctx); } catch (err) { console.error(`extension hook ${name}:`, err); }
+  }
+}
+
+async function refreshOnbModel() {
+  const el = $('#onb-model');
+  if (!el || $('#onboard').classList.contains('hidden')) return;
+  const h = await api('/api/health');
+  el.innerHTML = onbModelHTML(h.llm || {});
+  runHooks('onboarding', { links: $('#onb-model .onb-links'), panel: $('#onb-ext'),
+                           llm: h.llm || {} });
 }
 
 /* ── events ───────────────────────────────────────────────── */
@@ -1516,6 +2202,87 @@ document.addEventListener('click', (e) => {
 });
 
 async function handleClick(e) {
+  // --- appearance, history, toast ---
+  const th = e.target.closest('[data-theme-set]');
+  if (th) return setTheme(th.dataset.themeSet);
+  if (e.target.closest('#btn-hist-back')) return history.back();
+  if (e.target.closest('#btn-hist-fwd')) return history.forward();
+  if (e.target.closest('#toast-action')) {
+    $('#toast').classList.add('hidden');
+    return state.toastAction && state.toastAction();
+  }
+
+  // --- onboarding ---
+  const ex = e.target.closest('[data-onb-example]');
+  if (ex) { $('#onb-text').value = ex.dataset.onbExample; $('#onb-text').focus(); return; }
+  if (e.target.closest('#onb-go')) return onboardStart();
+  if (e.target.closest('#onb-add')) return onboardAdopt();
+  if (e.target.closest('#onb-skip') || e.target.closest('#onb-close')) return closeOnboarding();
+  const onbOpen = e.target.closest('[data-onb-open]');
+  if (onbOpen) { closeOnboarding(); return openTopic(onbOpen.dataset.onbOpen); }
+
+  // --- exports ---
+  const ex2 = e.target.closest('[data-export]');
+  if (ex2) return doExport(ex2.dataset.export, ex2.dataset.exportId, ex2.dataset.fmt);
+  if (e.target.closest('#btn-export-open')) {
+    return api('/api/export/reveal', { method: 'POST', body: {} });
+  }
+  if (e.target.closest('#btn-export-dir')) {
+    const r = await api('/api/settings/export-dir', { method: 'POST',
+                                                     body: { path: $('#export-dir').value } });
+    toast(`Exports will go to ${r.path}`, 4000);
+    return;
+  }
+
+  // --- the graph, and research history ---
+  const node = e.target.closest('[data-node-type]');
+  if (node) { e.stopPropagation(); return openNode(node.dataset.nodeType, node.dataset.nodeId); }
+  if (e.target.closest('#btn-research')) { e.stopPropagation(); return showResearch(); }
+  const rs = e.target.closest('[data-research-answer]');
+  if (rs) return openAnswer(rs.dataset.researchAnswer);
+  const ra = e.target.closest('[data-research-analysis]');
+  if (ra) return openAnalysis(ra.dataset.researchAnalysis);
+  const pinA = e.target.closest('[data-pin-answer]');
+  if (pinA) {
+    await api(`/api/answers/${pinA.dataset.pinAnswer}/pin?pinned=${pinA.dataset.pinned !== '1'}`,
+              { method: 'POST' });
+    await loadResearch();
+    return showResearch();
+  }
+  const filt = e.target.closest('[data-filter-node]');
+  if (filt) return filterByNode(filt.dataset.filterNode, filt.dataset.nodeKey);
+
+  // --- feeds ---
+  const feed = e.target.closest('[data-feed]');
+  if (feed) return readFeed(feed.dataset.feed);
+  if (e.target.closest('[data-feeds-more]')) { state.feedsOpen = !state.feedsOpen; return loadFeeds(); }
+  if (e.target.closest('#btn-src-find')) {
+    const v = ($('#src-find').value || '').trim();
+    if (!v) { toast('Describe a subject first', 3000); return; }
+    return findSourcesForText(v, true);
+  }
+
+  // --- opt-in services ---
+  const oi = e.target.closest('[data-optin]');
+  if (oi) {
+    await api('/api/optins', { method: 'POST', body: { key: oi.dataset.optin, on: oi.checked } });
+    toast(`${OPTIN_NAMES[oi.dataset.optin] || oi.dataset.optin} ${oi.checked ? 'on' : 'off'}`, 2500);
+    return;
+  }
+  const retry = e.target.closest('[data-optin-retry]');
+  if (retry) {
+    for (const key of retry.dataset.optinRetry.split(',')) {
+      await api('/api/optins', { method: 'POST', body: { key, on: true } });
+    }
+    const [kind, ...rest] = retry.dataset.retry.split(':');
+    const arg = rest.join(':');
+    if (kind === 'topic') {
+      if (!$('#onboard').classList.contains('hidden')) { closeOnboarding(); await openTopic(arg); }
+      return scoutSources(arg);
+    }
+    return findSourcesForText(arg, false);
+  }
+
   const unf = e.target.closest('[data-unfilter]');
   if (unf) return toggleFilter(unf.dataset.unfilter, unf.dataset.value);
   if (e.target.closest('#btn-unread-only')) {
@@ -1664,7 +2431,7 @@ async function handleClick(e) {
 
   const dig = e.target.closest('[data-digest]');
   if (dig) { e.stopPropagation(); return showDigest(dig.dataset.digest, dig.dataset.period || 'day'); }
-  if (e.target.closest('#btn-new-topic')) return showTopicForm();
+  if (e.target.closest('#btn-new-topic')) return showOnboarding();
   const et = e.target.closest('[data-edit-topic]');
   if (et) { e.stopPropagation(); return showTopicForm(et.dataset.editTopic); }
   if (e.target.closest('#tf-save')) return saveTopic();
@@ -1699,6 +2466,7 @@ async function handleClick(e) {
   if (e.target.closest('#btn-add-site')) return addSite();
   if (e.target.closest('#btn-src-add')) return addSite('#src-add', '#src-add-out');
   if (e.target.closest('#btn-sources')) return showSources();
+  if (e.target.closest('#btn-start-topic')) return showOnboarding();
   if (e.target.closest('#btn-status')) return showStatus();
   if (e.target.closest('#btn-signals')) {
     $$('.nav-item').forEach((n) => n.classList.remove('active'));
@@ -1766,6 +2534,8 @@ async function handleClick(e) {
   }
   if (e.target.closest('#btn-signal')) return showSignals();
   if (e.target.closest('#btn-new-analysis')) return newAnalysis();
+  const sigE = e.target.closest('[data-signal-entity]');
+  if (sigE) return newAnalysis(sigE.dataset.signalEntity);
   if (e.target.closest('#btn-all-analyses')) return showSignals();
   if (e.target.closest('#btn-back')) { const b = state.back; state.back = null; return b.fn(); }
 
@@ -1840,6 +2610,38 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     saveToNewCollection().catch((err) => toast('That did not work: ' + err.message, 6000));
   }
+  if (e.key === 'Enter' && e.target && e.target.id === 'onb-text') {
+    e.preventDefault();
+    onboardStart().catch((err) => toast('That did not work: ' + err.message, 6000));
+  }
+  if (e.key === 'Enter' && e.target && e.target.id === 'src-find') {
+    e.preventDefault();
+    $('#btn-src-find').click();
+  }
+  // ⌘[ and ⌘] -- back and forward through reader screens, as in Safari.
+  if ((e.metaKey || e.ctrlKey) && (e.key === '[' || e.key === ']')) {
+    e.preventDefault();
+    if (e.key === '[') history.back(); else history.forward();
+  }
+  if (e.key === 'Escape' && !$('#onboard').classList.contains('hidden')
+      && $('#onb-close')) closeOnboarding();
+});
+
+// OPML import: read the file here, hand the text to the server.
+document.addEventListener('change', async (e) => {
+  if (!e.target || e.target.id !== 'opml-file' || !e.target.files.length) return;
+  const text = await e.target.files[0].text();
+  try {
+    const res = await fetch('/api/opml', { method: 'POST', body: text,
+                                           headers: { 'Content-Type': 'text/xml' } });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.detail || res.statusText);
+    await showSources();
+    $('#opml-out').textContent = `${r.added} feed(s) added, ${r.already_had} already here.`;
+    loadFeeds();
+  } catch (err) {
+    toast('Could not import that file: ' + err.message, 6000);
+  }
 });
 
 $('#reader-lang').addEventListener('change', async (e) => {
@@ -1849,10 +2651,18 @@ $('#reader-lang').addEventListener('change', async (e) => {
   if (state.activeData) loadAbstract(state.activeData);
 });
 
-function toast(text, ms = 0) {
+// A toast can carry one action -- "Open" on an answer that finished while
+// you were reading something else, "Show in Finder" on an export.
+let toastTimer = null;
+function toast(text, ms = 0, action = null) {
   $('#toast').classList.remove('hidden');
   $('#toast-text').textContent = text;
-  if (ms) setTimeout(() => $('#toast').classList.add('hidden'), ms);
+  const b = $('#toast-action');
+  b.classList.toggle('hidden', !action);
+  b.textContent = action ? action.label : '';
+  state.toastAction = action ? action.fn : null;
+  clearTimeout(toastTimer);
+  if (ms) toastTimer = setTimeout(() => $('#toast').classList.add('hidden'), ms);
 }
 async function pollRun() {
   // One poller, ever. Each press used to start another interval, and none
@@ -1873,7 +2683,7 @@ async function pollRun() {
       const errs = (s.result && s.result.errors) || [];
       toast(errs.length ? `Finished with ${errs.length} problem(s): ${errs[0]}`
                         : 'Done', errs.length ? 9000 : 4000);
-      await loadTopics(); await loadFacetCounts();
+      await loadTopics(); await loadFacetCounts(); loadFeeds();
       // If the fetch was started from a topic, that topic is what the user
       // is waiting on.
       if (state.topic) { await openTopic(state.topic); } else { await loadList(); }

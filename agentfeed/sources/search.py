@@ -136,7 +136,11 @@ def _blocking_search(query: str, *, timelimit: str | None, max_results: int,
 async def fetch_search(client: httpx.AsyncClient, url: str,
                        config: dict[str, Any]) -> list[RawItem]:
     global _last_call
-    if not settings.enable_search_sources:
+    from ..optins import enabled
+    if not enabled("duckduckgo"):
+        #  Web search is opt-in (Status → Web search services). A watch the
+        #  person set up earlier simply waits until it is switched back on.
+        log.info("search: DuckDuckGo is off; skipping %r", config.get("query") or url)
         return []
 
     query = config.get("query") or url

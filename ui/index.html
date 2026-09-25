@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AgentFeed</title>
+<!-- The theme is applied before the stylesheet paints anything, so a
+     reload never flashes light before going dark (or newsprint). -->
+<script>
+  try { document.documentElement.dataset.theme =
+          localStorage.getItem('agentfeed.theme') || 'auto'; } catch (_) {}
+</script>
 <link rel="stylesheet" href="/static/style.css">
 <link rel="icon" type="image/svg+xml" href="/static/mark.svg">
 <!-- The whole point, in one tag: an agent that crawls this page finds the
@@ -31,13 +37,25 @@
 
     <nav id="nav" class="scroll">
       <section class="nav-group">
-        <h3 class="nav-title">Topics <button id="btn-new-topic" class="tiny-btn" title="New topic">+</button></h3>
+        <h3 class="nav-title">Topics <button id="btn-new-topic" class="tiny-btn" title="Track a new topic">+</button></h3>
         <div class="nav-body" id="topic-list"></div>
       </section>
 
       <section class="nav-group">
         <h3 class="nav-title">Saved <button id="btn-new-collection" class="tiny-btn" title="New collection">+</button></h3>
         <div class="nav-body" id="collection-list"></div>
+      </section>
+
+      <!-- Every answer and analysis, so a report is one click away whatever
+           you were doing when it finished. -->
+      <section class="nav-group">
+        <h3 class="nav-title">Research <button id="btn-research" class="tiny-btn" title="All questions and analyses">≡</button></h3>
+        <div class="nav-body" id="research-list"></div>
+      </section>
+
+      <section class="nav-group">
+        <h3 class="nav-title collapsible" data-toggle>Feeds</h3>
+        <div class="nav-body" id="feed-list"></div>
       </section>
 
       <section class="nav-group">
@@ -55,6 +73,12 @@
     <div class="side-foot">
       <div id="afp-pill" class="afp-pill" title="Agent Feed Protocol endpoint">
         <span class="dot ok"></span><span id="afp-text">agentfeed/0.1</span>
+      </div>
+      <div class="theme-switch" id="theme-switch" role="radiogroup" aria-label="Theme">
+        <button data-theme-set="auto" title="Follow the system">Auto</button>
+        <button data-theme-set="light">Light</button>
+        <button data-theme-set="dark">Dark</button>
+        <button data-theme-set="newspaper" title="Warm newsprint, serif type">Paper</button>
       </div>
       <div class="foot-row">
         <button id="btn-sources" class="foot-btn">Sources</button>
@@ -83,6 +107,8 @@
 
   <section id="reader-col">
     <header class="col-head reader-head">
+      <button class="icon-btn" id="btn-hist-back" title="Back (⌘[)">‹</button>
+      <button class="icon-btn" id="btn-hist-fwd" title="Forward (⌘])">›</button>
       <div id="reader-actions" class="hidden">
         <a class="icon-btn" id="btn-open" target="_blank" title="Open original">↗</a>
         <button class="icon-btn" id="btn-star" title="Save to Favourites">☆</button>
@@ -114,7 +140,9 @@
     </div>
   </div>
 
-  <div id="toast" class="hidden"><div id="toast-text"></div></div>
+  <div id="toast" class="hidden"><div id="toast-text"></div>
+    <button id="toast-action" class="hidden"></button></div>
+  <div id="onboard" class="hidden"></div>
 </div>
 <script src="/static/app.js"></script>
 </body>

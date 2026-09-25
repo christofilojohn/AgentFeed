@@ -9,16 +9,30 @@ from PyInstaller.utils.hooks import collect_submodules
 ROOT = Path(SPECPATH).parent
 IS_MAC = sys.platform == "darwin"
 
+from PyInstaller.utils.hooks import collect_all
+
+datas = [
+    (str(ROOT / "ui"), "ui"),
+    (str(ROOT / "agentfeed" / "domains"), "agentfeed/domains"),
+    (str(ROOT / "LICENSE"), "."),
+]
+# Written by scripts/third_party_licenses.py during the build: the copyright
+# and licence text every bundled dependency asks to travel with it.
+if (ROOT / "THIRD_PARTY_LICENSES.txt").exists():
+    datas.append((str(ROOT / "THIRD_PARTY_LICENSES.txt"), "."))
+binaries = []
+hidden = (collect_submodules("agentfeed") + collect_submodules("uvicorn")
+          + ["feedparser", "trafilatura", "ddgs"])
+# ReportLab loads fonts and renderers by name at runtime.
+_d, _b, _h = collect_all("reportlab")
+datas += _d; binaries += _b; hidden += _h
+
 a = Analysis(
     [str(ROOT / "packaging" / "launch.py")],
     pathex=[str(ROOT)],
-    datas=[
-        (str(ROOT / "ui"), "ui"),
-        (str(ROOT / "agentfeed" / "domains"), "agentfeed/domains"),
-    ],
-    hiddenimports=(collect_submodules("agentfeed")
-                   + collect_submodules("uvicorn")
-                   + ["feedparser", "trafilatura", "ddgs"]),
+    datas=datas,
+    binaries=binaries,
+    hiddenimports=hidden,
     excludes=["tkinter", "matplotlib", "PyQt5", "PyQt6", "PySide6"],
     noarchive=False,
 )

@@ -37,7 +37,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .collections import get_collection
-from .db import conn, jdump, jload
+from .db import conn, jdump, jload, link_citations
 from .llm import (LLMUnavailable, get_llm, resolve_models,
                   resolved_assistant_model)
 from .retrieval import search
@@ -304,6 +304,7 @@ async def ask(collection_id: int, question: str = "", save: bool = True,
               "headline": it.get("headline") or it.get("title"),
               "url": it.get("url", ""),
               "source": it.get("source_name", ""),
+              "source_type": it.get("source_type", ""),
               "published": (it.get("published_at") or "")[:10] or "undated"}
              for it in chosen if it["id"] in cited_ids]
 
@@ -322,13 +323,19 @@ async def ask(collection_id: int, question: str = "", save: bool = True,
            "model": resolved_assistant_model(), "generated_at": iso(now_utc())}
 
     if save:
+        parent = stats["parent_id"]
+        if parent and not conn().execute(
+                "SELECT 1 FROM collection_answers WHERE id=?", (parent,)).fetchone():
+            parent = None
         cur = conn().execute(
             """INSERT INTO collection_answers(collection_id, question, answer,
-                                              cited, stats, model)
-               VALUES (?,?,?,?,?,?)""",
+                                              cited, stats, model, parent_id)
+               VALUES (?,?,?,?,?,?,?)""",
             (collection_id, "Summary" if summary else question,
              jdump(report.model_dump()),
-             jdump(cited), jdump(stats), resolved_assistant_model()))
+             jdump(cited), jdump(stats), resolved_assistant_model(), parent))
+        answer_id = int(cur.lastrowid or 0)
+        link_citations("answer_citations", "answer_id", answer_id, cited_ids)
         conn().commit()
-        out["id"] = cur.lastrowid
+        out["id"] = answer_id
     return out

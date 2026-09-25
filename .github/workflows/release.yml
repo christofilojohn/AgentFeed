@@ -33,6 +33,8 @@ jobs:
         run: |
           uv venv --python 3.13
           uv pip install -e '.[desktop]'
+          if [ "$RUNNER_OS" = "macOS" ]; then PY=.venv/bin/python; else PY=.venv/Scripts/python.exe; fi
+          "$PY" scripts/third_party_licenses.py "agentfeed[desktop]" -o THIRD_PARTY_LICENSES.txt
           if [ "$RUNNER_OS" = "macOS" ]; then
             .venv/bin/pyinstaller --noconfirm --clean packaging/agentfeed.spec
             ditto -c -k --keepParent dist/AgentFeed.app "dist/${{ matrix.asset }}"

@@ -33,7 +33,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .db import conn, jdump, jload
+from .db import conn, jdump, jload, link_citations
 from .domain import get_domain, normalise_entity
 from .llm import LLMUnavailable, get_llm, resolve_models, resolved_assistant_model
 from .retrieval import search
@@ -296,6 +296,7 @@ async def market_signals(entity: str = "", facets: dict[str, list[str]] | None =
          "headline": it.get("headline") or it.get("title"),
          "url": it.get("url", ""),
          "source": it.get("source_name", ""),
+         "source_type": it.get("source_type", ""),
          "published": (it.get("published_at") or "")[:10] or "undated"}
         for it in items if it["id"] in cited]
 
@@ -314,6 +315,8 @@ async def market_signals(entity: str = "", facets: dict[str, list[str]] | None =
         (subject, jdump({"entity": entity, "facets": facets or {}}), days,
          jdump(report.model_dump()), jdump(cited_items), jdump(stats_blob),
          resolved_assistant_model()))
+    link_citations("analysis_citations", "analysis_id", int(cur.lastrowid or 0),
+                   cited)
     conn().commit()
 
     return {

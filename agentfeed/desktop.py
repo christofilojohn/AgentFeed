@@ -77,12 +77,22 @@ def run(open_page: str = "/welcome") -> None:
     if not _wait_for(f"{base}/api/health"):
         log.error("server did not come up on %s", base)
 
+    #  Exports are offered as downloads; WebKit drops them unless asked not to.
+    try:
+        webview.settings["ALLOW_DOWNLOADS"] = True
+    except Exception:  # noqa: BLE001 - older pywebview; exports still save to disk
+        pass
+
     window: Any = webview.create_window(
         TITLE, f"{base}{open_page}", width=1280, height=820,
         min_size=(900, 600), text_select=True)
 
     def on_closed() -> None:
         log.info("window closed; server thread will exit with the process")
+        #  Extensions may own child processes; they are told to stop here
+        #  rather than left running after the window has gone.
+        from .plugins import call
+        call("on_shutdown")
 
     window.events.closed += on_closed
     #  private_mode=False keeps localStorage across launches, so the reader

@@ -46,7 +46,7 @@ from typing import Any, Iterable
 
 from .db import conn, jdump, jload
 from .domain import get_domain, normalise_entity
-from .retrieval import check_facets
+from .retrieval import check_facets, source_type
 from .util import iso, now_utc
 
 log = logging.getLogger("agentfeed.topics")
@@ -483,13 +483,15 @@ def topic_items(topic_id: int, period: str = "", day: date | None = None,
     """The deterministic slice. No model involved, and no full-corpus scan."""
     sql = """
         SELECT i.id, i.url, i.title, i.published_at, i.fetched_at, i.lang,
-               s.name AS source_name, s.url AS source_url,
+               i.doi, s.name AS source_name, s.url AS source_url,
+               s.kind AS source_kind, u.read_at,
                e.headline, e.summary, e.so_what, e.item_type, e.impact_score,
                e.significance, ti.score AS match_score, ti.matched
           FROM topic_items ti
           JOIN items i      ON i.id = ti.item_id
           JOIN enrichment e ON e.item_id = i.id
           LEFT JOIN sources s ON s.id = i.source_id
+          LEFT JOIN user_state u ON u.item_id = i.id
          WHERE ti.topic_id = ?"""
     params: list[Any] = [topic_id]
     if period:
@@ -507,6 +509,9 @@ def topic_items(topic_id: int, period: str = "", day: date | None = None,
     for r in conn().execute(sql, params).fetchall():
         d = dict(r)
         d["matched"] = jload(d.get("matched"), [])
+        d["unread"] = d.pop("read_at") is None
+        d["source_type"], d["source_type_label"] = source_type(
+            d.get("source_kind"), d.get("doi"))
         out.append(d)
     return out
 

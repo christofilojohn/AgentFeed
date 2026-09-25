@@ -10,3 +10,4 @@ dist/
 # macOS
 .DS_Store
 *.spec.bak
+THIRD_PARTY_LICENSES.txt

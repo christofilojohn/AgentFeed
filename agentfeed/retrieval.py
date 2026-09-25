@@ -48,6 +48,41 @@ def facet_map() -> dict[str, str]:
     d = get_domain()
     return {**{f.key: f.id for f in d.facets}, "entities": "entity"}
 
+# --------------------------------------------------------------------------
+# where an item came from, said plainly
+# --------------------------------------------------------------------------
+# A reader weighs a peer-reviewed abstract, a trade-press article and a
+# scraped search hit differently, so every item carries its kind of source
+# in words -- not an adapter name. One table, used by the list, the reader,
+# citations and exports alike.
+
+SOURCE_TYPES: dict[str, tuple[str, str]] = {
+    #  adapter kind -> (type key, label)
+    "rss":       ("rss", "RSS feed"),
+    "html_list": ("web", "Web page"),
+    "search":    ("search", "Web search"),
+    "europepmc": ("academic", "Academic · Europe PMC"),
+    "openalex":  ("academic", "Academic · OpenAlex"),
+    "biorxiv":   ("academic", "Academic · bioRxiv"),
+    "afp":       ("agent", "Agent feed"),
+    "manual":    ("manual", "Added by hand"),
+    "import":    ("manual", "Imported"),
+}
+SOURCE_TYPE_LABELS = {"rss": "RSS feeds", "web": "Web pages",
+                      "search": "Web searches", "academic": "Academic",
+                      "agent": "Agent feeds", "manual": "Added by hand"}
+ACADEMIC_KINDS = tuple(k for k, (t, _l) in SOURCE_TYPES.items() if t == "academic")
+
+
+def source_type(kind: str | None, doi: str | None = None) -> tuple[str, str]:
+    """(key, label) for an item's origin. A journal's own RSS feed is still
+    academic: the DOI says so even when the adapter does not."""
+    key, label = SOURCE_TYPES.get(kind or "", ("web", "Web page"))
+    if doi and key in ("rss", "web", "search"):
+        return "academic", f"Academic · {label}"
+    return key, label
+
+
 SORTS = {
     "newest": "COALESCE(i.published_at, i.fetched_at) DESC",
     "oldest": "COALESCE(i.published_at, i.fetched_at) ASC",
@@ -126,6 +161,16 @@ def _where(f: dict[str, Any]) -> tuple[list[str], list[Any]]:
         marks = ",".join("?" * len(f["source_ids"]))
         where.append(f"i.source_id IN ({marks})")
         params.extend(f["source_ids"])
+    if f.get("source_types"):
+        kinds = [k for k, (t, _l) in SOURCE_TYPES.items()
+                 if t in f["source_types"]]
+        ors = []
+        if kinds:
+            ors.append(f"s.kind IN ({','.join('?' * len(kinds))})")
+            params.extend(kinds)
+        if "academic" in f["source_types"]:
+            ors.append("i.doi IS NOT NULL")
+        where.append("(" + " OR ".join(ors or ["0"]) + ")")
     if f.get("source_tags"):
         ors = []
         for tag in f["source_tags"]:
@@ -163,6 +208,7 @@ SELECT i.id, i.url, i.title, i.author, i.published_at, i.fetched_at,
        i.excerpt, i.word_count, i.doi, i.content_state, i.enrich_state,
        i.lang, i.title_en, i.translated_from, i.translate_state,
        s.id AS source_id, s.name AS source_name, s.tags AS source_tags,
+       s.kind AS source_kind,
        s.trust AS source_trust, s.url AS source_url,
        e.headline, e.summary, e.key_points, e.so_what, e.item_type,
        e.content_class, e.significance, e.breakthrough, e.breakthrough_reason,
@@ -175,8 +221,23 @@ SELECT i.id, i.url, i.title, i.author, i.published_at, i.fetched_at,
 """
 
 
-def hydrate(row: Any) -> dict[str, Any]:
+def hydrate_many(rows: list[Any]) -> list[dict[str, Any]]:
+    """Hydrate a page of rows with one tag query, not one per row."""
+    if not rows:
+        return []
+    ids = [r["id"] for r in rows]
+    tags: dict[int, list[Any]] = {}
+    for t in conn().execute(
+            f"SELECT item_id, facet, value FROM tags WHERE facet != '_meta' "
+            f"AND item_id IN ({','.join('?' * len(ids))})", ids):
+        tags.setdefault(t["item_id"], []).append(t)
+    return [hydrate(r, tags.get(r["id"], [])) for r in rows]
+
+
+def hydrate(row: Any, tags: list[Any] | None = None) -> dict[str, Any]:
     d = dict(row)
+    d["source_type"], d["source_type_label"] = source_type(
+        d.get("source_kind"), d.get("doi"))
     d["key_points"] = jload(d.get("key_points"), [])
     d["orgs"] = jload(d.get("orgs"), [])
     d["numbers"] = jload(d.get("numbers"), [])
@@ -184,9 +245,10 @@ def hydrate(row: Any) -> dict[str, Any]:
     d["breakthrough"] = bool(d.get("breakthrough"))
     d["starred"] = bool(d.get("starred"))
     d["unread"] = d.get("read_at") is None
-    tags = conn().execute(
-        "SELECT facet, value FROM tags WHERE item_id=? AND facet != '_meta'",
-        (d["id"],)).fetchall()
+    if tags is None:
+        tags = conn().execute(
+            "SELECT facet, value FROM tags WHERE item_id=? AND facet != '_meta'",
+            (d["id"],)).fetchall()
     for key, facet in facet_map().items():
         d[key] = [t["value"] for t in tags if t["facet"] == facet]
     return d
@@ -261,7 +323,7 @@ async def search(filters: dict[str, Any] | None = None, *, text: str = "",
             "LEFT JOIN user_state u ON u.item_id=i.id"
             + (" WHERE " + " AND ".join(where) if where else ""),
             params[:-2]).fetchone()[0]
-        return {"items": [hydrate(r) for r in rows], "total": total,
+        return {"items": hydrate_many(rows), "total": total,
                 "mode": "filter"}
 
     allowed = set(_candidate_ids(f))
@@ -293,8 +355,8 @@ async def search(filters: dict[str, Any] | None = None, *, text: str = "",
 
     marks = ",".join("?" * len(page))
     rows = conn().execute(BASE_SELECT + f" WHERE i.id IN ({marks})", page).fetchall()
-    by_id = {r["id"]: r for r in rows}
-    items = [hydrate(by_id[i]) for i in page if i in by_id]
+    by_id = {d["id"]: d for d in hydrate_many(rows)}
+    items = [by_id[i] for i in page if i in by_id]
 
     if sort == "impact":
         items.sort(key=lambda d: -(d.get("impact_score") or 0))
@@ -356,3 +418,21 @@ def facet_counts(f: dict[str, Any] | None = None) -> dict[str, list[dict[str, An
         out[key] = [{"value": r["value"], "count": r["n"]}
                     for r in conn().execute(sql, params).fetchall()]
     return out
+
+
+def source_type_counts(f: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Items per kind of source, under every filter except that one."""
+    where, params = _where(counting_filters(f or {}, "source_types"))
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    rows = conn().execute(
+        "SELECT s.kind AS kind, (i.doi IS NOT NULL) AS has_doi, count(*) AS n "
+        "FROM items i LEFT JOIN sources s ON s.id=i.source_id "
+        "LEFT JOIN enrichment e ON e.item_id=i.id "
+        "LEFT JOIN user_state u ON u.item_id=i.id"
+        f"{clause} GROUP BY s.kind, has_doi", params).fetchall()
+    counts: dict[str, int] = {}
+    for r in rows:
+        key, _label = source_type(r["kind"], "doi" if r["has_doi"] else None)
+        counts[key] = counts.get(key, 0) + r["n"]
+    return [{"value": k, "label": SOURCE_TYPE_LABELS.get(k, k), "count": n}
+            for k, n in sorted(counts.items(), key=lambda kv: -kv[1])]

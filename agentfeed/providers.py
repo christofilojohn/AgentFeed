@@ -113,7 +113,8 @@ PROVIDERS: dict[str, Provider] = {
 #  all three platforms and needs no GUI.
 #  NIM and vLLM share port 8000; whichever is actually running answers the
 #  probe, and the model ids it returns say which one it was.
-DETECT_ORDER = ("ollama", "lmstudio", "llamacpp", "nim", "vllm")
+#  A list so an extension can put a runtime of its own first.
+DETECT_ORDER = ["ollama", "lmstudio", "llamacpp", "nim", "vllm"]
 
 
 async def probe(base_url: str, timeout: float = 3.0) -> list[str]:

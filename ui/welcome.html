@@ -5,10 +5,24 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AgentFeed</title>
 <link rel="icon" type="image/svg+xml" href="/static/mark.svg">
+<script>
+  try { document.documentElement.dataset.theme =
+          localStorage.getItem('agentfeed.theme') || 'auto'; } catch (_) {}
+</script>
 <style>
+  /* Dark is this page's own look; the reader's light and newspaper themes
+     carry over when chosen explicitly. */
   :root { color-scheme: dark; --bg: #12100e; --panel: #1b1815; --line: #2e2a25;
     --ink: #f3efe9; --soft: #b7b0a6; --faint: #7d766d; --orange: #ff8c1a;
-    --ok: #4fc17f; --warn: #e0a02a; }
+    --ok: #4fc17f; --warn: #e0a02a; --well: #0d0b09; --well-ink: #e6e0d6; }
+  :root[data-theme="light"] { color-scheme: light; --bg: #f6f6f7; --panel: #ffffff;
+    --line: #e2e2e6; --ink: #16181d; --soft: #5c6270; --faint: #8b909c;
+    --orange: #e0700a; --ok: #157a4a; --warn: #b7791f; --well: #f1f1f3; --well-ink: #16181d; }
+  :root[data-theme="newspaper"] { color-scheme: light; --bg: #f7f0dc; --panel: #fbf6e8;
+    --line: #dccfae; --ink: #221a0e; --soft: #54483a; --faint: #85775f;
+    --orange: #8a2f1b; --ok: #3f6b2a; --warn: #a4400f; --well: #efe5ca; --well-ink: #221a0e; }
+  :root[data-theme="newspaper"] body { font-family: "Iowan Old Style", Palatino, Georgia, serif; }
+  :root[data-theme="newspaper"] button.primary { color: #fbf6e8; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
     font: 15px/1.55 -apple-system, "Segoe UI", system-ui, sans-serif;
@@ -37,10 +51,10 @@
   .way h3 { margin: 0 0 4px; font-size: 14.5px; }
   .way p { margin: 0 0 8px; color: var(--soft); font-size: 13.5px; }
   code, pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; }
-  pre { margin: 6px 0 0; padding: 9px 11px; background: #0d0b09; border-radius: 7px;
-    color: #e6e0d6; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  pre { margin: 6px 0 0; padding: 9px 11px; background: var(--well); border-radius: 7px;
+    color: var(--well-ink); overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  input { flex: 1; min-width: 220px; background: #0d0b09; color: var(--ink);
+  input { flex: 1; min-width: 220px; background: var(--well); color: var(--ink);
     border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; font: inherit;
     font-size: 13.5px; }
   button { font: inherit; font-size: 13.5px; padding: 8px 14px; border-radius: 8px;
@@ -74,6 +88,8 @@
   </div>
 
   <div class="ways" id="ways">
+    <!-- Extensions (agentfeed/plugins.py) may add a way of their own here. -->
+    <div id="welcome-ext"></div>
     <div class="way">
       <h3>1 · Run one here</h3>
       <p>Easiest. Install Ollama, pull a model, and this page will notice on its own.</p>

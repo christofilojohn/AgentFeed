@@ -10,8 +10,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -21,13 +21,22 @@ from .db import (all_settings, conn, get_setting, jdump, jload, migrate,
 from .domain import available_packs, get_domain, normalise_entity
 from .llm import get_llm, plan_prompt_budget, resolve_models
 from .protocol.server import router as afp_router
-from .retrieval import check_facets, facet_counts, get_item, search
+from .retrieval import (check_facets, facet_counts, get_item, search,
+                        source_type, source_type_counts)
 from .signals import market_signals, SIGNAL_DISCLAIMER
 
 log = logging.getLogger("agentfeed.api")
 
 app = FastAPI(title="AgentFeed", docs_url="/docs", redoc_url=None)
 app.include_router(afp_router)
+
+
+def _mount_plugins() -> None:
+    from .plugins import mount
+    mount(app)
+
+
+_mount_plugins()
 
 RUN_STATE: dict[str, Any] = {"active": False, "stage": "", "message": "",
                              "log": [], "result": None}
@@ -38,7 +47,8 @@ async def no_store_ui(request: Any, call_next: Any) -> Any:
     """Never cache the UI: everything is local, and a cached page means an
     edit silently does not appear."""
     response = await call_next(request)
-    if request.url.path == "/" or request.url.path.startswith("/static"):
+    if request.url.path in ("/", "/welcome") or request.url.path.startswith(
+            ("/static", "/plugins")):
         response.headers["Cache-Control"] = "no-store, must-revalidate"
     return response
 
@@ -46,6 +56,8 @@ async def no_store_ui(request: Any, call_next: Any) -> Any:
 @app.on_event("startup")
 async def _startup() -> None:
     migrate()
+    from .plugins import call
+    call("on_startup")
 
 
 # --------------------------------------------------------------------------
@@ -68,6 +80,7 @@ async def health() -> dict[str, Any]:
             "SELECT count(*) FROM subscriptions WHERE active=1").fetchone()[0],
         "deliveries": c.execute("SELECT count(*) FROM deliveries").fetchone()[0],
         "entities": c.execute("SELECT count(*) FROM orgs").fetchone()[0],
+        "topics": c.execute("SELECT count(*) FROM topics WHERE active=1").fetchone()[0],
     }
     llm = await get_llm().health()
     if llm.get("ok"):
@@ -130,6 +143,10 @@ class Query(BaseModel):
     min_impact: float | None = None
     unread: bool = False
     starred: bool = False
+    #  Where it came from: a kind of source (rss, academic, web, …) or
+    #  particular sources, for reading one feed the way a feed reader does.
+    source_types: list[str] = []
+    source_ids: list[int] = []
     sort: str = "newest"
     limit: int = 60
     offset: int = 0
@@ -152,7 +169,8 @@ def _flatten(q: Query) -> dict[str, Any]:
     f: dict[str, Any] = {k: v for k, v in q.facets.items() if v}
     if q.entities:
         f["entities"] = [normalise_entity(e) for e in q.entities]
-    for k in ("item_types", "days", "min_impact", "unread", "starred"):
+    for k in ("item_types", "days", "min_impact", "unread", "starred",
+              "source_types", "source_ids"):
         v = getattr(q, k)
         if v:
             f[k] = v
@@ -234,6 +252,12 @@ def read_item(item_id: int) -> dict[str, Any]:
 async def facets(q: Query) -> dict[str, Any]:
     _guard_facets(q.facets)
     return facet_counts(_flatten(q))
+
+
+@app.post("/api/source-types")
+def source_types(q: Query) -> dict[str, Any]:
+    """Items per kind of source, under the other filters in force."""
+    return {"source_types": source_type_counts(_flatten(q))}
 
 
 @app.get("/api/entities")
@@ -344,8 +368,12 @@ def api_topic_items(topic_id: int, period: str = "", limit: int = 60,
     t = get_topic(topic_id)
     if t is None:
         raise HTTPException(404, "no such topic")
-    return {"topic": t, "items": topic_items(topic_id, period=period,
-                                             limit=limit, order=order)}
+    from .collections import membership
+    rows = topic_items(topic_id, period=period, limit=limit, order=order)
+    where = membership([r["id"] for r in rows])
+    for r in rows:
+        r["collections"] = where.get(r["id"], [])
+    return {"topic": t, "items": rows}
 
 
 @app.post("/api/topics/route")
@@ -594,9 +622,18 @@ async def api_llm_connect(body: ConnectIn) -> dict[str, Any]:
 
 
 @app.get("/welcome")
-def welcome() -> FileResponse:
-    return FileResponse(UI_DIR / "welcome.html",
+def welcome() -> HTMLResponse:
+    return HTMLResponse(_with_plugins(UI_DIR / "welcome.html"),
                         headers={"Cache-Control": "no-store"})
+
+
+def _with_plugins(page: Any) -> str:
+    """The page, with each installed extension's script and stylesheet
+    loaded after the page's own. Without extensions it is the file as is."""
+    from .plugins import page_tags
+    html = page.read_text(encoding="utf-8")
+    tags = page_tags()
+    return html.replace("</body>", tags + "\n</body>", 1) if tags else html
 
 
 # --------------------------------------------------------------------------
@@ -781,6 +818,9 @@ FOLLOW_STATE: dict[str, Any] = {"active": False, "steps": [], "message": "",
 class FollowIn(BaseModel):
     description: str
     find_sources: bool = True
+    #  Look for sources even when the corpus already has matches -- what a
+    #  person starting from a blank reader (or asking for feeds) wants.
+    scout_always: bool = False
 
 
 @app.post("/api/topics/follow")
@@ -825,9 +865,13 @@ async def start_follow(body: FollowIn) -> dict[str, Any]:
             say(f"{found} article(s) in the corpus match")
 
             suggestions: list[dict[str, Any]] = []
-            if found < 3 and body.find_sources:
-                say("Not much here yet — looking for sources that cover it")
+            skipped: list[str] = []
+            if body.find_sources and (found < 3 or body.scout_always):
+                say("Looking for feeds and research that cover it"
+                    if found >= 3 else
+                    "Not much here yet — looking for sources that cover it")
                 sc = await scout(tid, progress=lambda m: say(m))
+                skipped = sc.get("skipped") or []
                 if sc.get("ok"):
                     suggestions = sc["suggestions"]
                     say(f"Found {len(suggestions)} source(s) worth adding",
@@ -838,7 +882,7 @@ async def start_follow(body: FollowIn) -> dict[str, Any]:
             FOLLOW_STATE["result"] = {
                 "ok": True, "topic_id": tid, "rule": rule,
                 "matched": found, "stats": stats,
-                "suggestions": suggestions}
+                "suggestions": suggestions, "skipped": skipped}
         except Exception as exc:  # noqa: BLE001
             log.error("follow failed: %s", exc)
             FOLLOW_STATE["result"] = {"ok": False, "reason": str(exc)[:200]}
@@ -1031,9 +1075,17 @@ def list_sources() -> dict[str, Any]:
     rows = conn().execute(
         "SELECT * FROM sources ORDER BY enabled DESC, name COLLATE NOCASE"
     ).fetchall()
+    #  Unread per source in one grouped query, for the feed list.
+    unread = {r[0]: r[1] for r in conn().execute(
+        "SELECT i.source_id, count(*) FROM items i "
+        "LEFT JOIN user_state u ON u.item_id = i.id "
+        "WHERE u.read_at IS NULL AND i.enrich_state != 'skipped' "
+        "GROUP BY i.source_id")}
     out = []
     for r in rows:
         d = dict(r)
+        d["unread"] = unread.get(d["id"], 0)
+        d["source_type"], d["source_type_label"] = source_type(d["kind"])
         d["config"] = jload(d.get("config"), {})
         d["tags"] = jload(d.get("tags"), [])
         d["enabled"] = bool(d["enabled"])
@@ -1096,6 +1148,203 @@ async def discover_source(body: DiscoverIn) -> dict[str, Any]:
     return {"candidates": out}
 
 
+
+
+# --------------------------------------------------------------------------
+# OPML: moving feeds in and out of other readers
+# --------------------------------------------------------------------------
+
+@app.get("/api/opml")
+def api_export_opml() -> Response:
+    from .opml import export_opml
+    return Response(export_opml(), media_type="text/x-opml",
+                    headers={"Content-Disposition":
+                             'attachment; filename="agentfeed-feeds.opml"'})
+
+
+@app.post("/api/opml")
+async def api_import_opml(request: Request) -> dict[str, Any]:
+    from .opml import import_opml
+    text = (await request.body()).decode("utf-8", "replace")
+    try:
+        return import_opml(text)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+# --------------------------------------------------------------------------
+# the graph: what anything is connected to
+# --------------------------------------------------------------------------
+
+@app.get("/api/graph/{node_type}/{node_id}")
+def api_graph(node_type: str, node_id: str, limit: int = 8) -> dict[str, Any]:
+    from .graph import neighbours
+    try:
+        return neighbours(node_type, node_id, max(1, min(limit, 50)))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+# --------------------------------------------------------------------------
+# research history: every answer and analysis, in one place
+# --------------------------------------------------------------------------
+
+@app.get("/api/research")
+def api_research(limit: int = 60) -> dict[str, Any]:
+    """Conversations (one row per thread, latest turn) and analyses, newest
+    first -- so a report is never more than one click away, whatever the
+    reader was doing when it finished."""
+    c = conn()
+    threads = [dict(r) for r in c.execute(
+        """WITH RECURSIVE chain(id, root) AS (
+               SELECT id, id FROM collection_answers WHERE parent_id IS NULL
+               UNION ALL
+               SELECT a.id, chain.root FROM collection_answers a
+                 JOIN chain ON a.parent_id = chain.id)
+           SELECT r.id AS root_id, r.question, r.collection_id,
+                  col.name AS collection, r.pinned,
+                  max(chain.id) AS last_id, count(*) AS turns,
+                  max(a.created_at) AS updated_at
+             FROM chain
+             JOIN collection_answers r ON r.id = chain.root
+             JOIN collection_answers a ON a.id = chain.id
+             JOIN collections col ON col.id = r.collection_id
+            GROUP BY chain.root
+            ORDER BY r.pinned DESC, last_id DESC LIMIT ?""", (limit,))]
+    analyses = [dict(r) for r in c.execute(
+        "SELECT id, subject, days, pinned, created_at, "
+        "json_extract(stats, '$.call') AS call FROM analyses "
+        "ORDER BY pinned DESC, id DESC LIMIT ?", (limit,))]
+    return {"threads": threads, "analyses": analyses}
+
+
+@app.post("/api/answers/{answer_id}/pin")
+def api_pin_answer(answer_id: int, pinned: bool = True) -> dict[str, Any]:
+    conn().execute("UPDATE collection_answers SET pinned=? WHERE id=?",
+                   (int(pinned), answer_id))
+    conn().commit()
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# exports: Markdown and PDF, named so a folder of them sorts itself
+# --------------------------------------------------------------------------
+
+@app.get("/api/export/{kind}/{ref_id}")
+def api_export_download(kind: str, ref_id: int, format: str = "md") -> Response:
+    from urllib.parse import quote
+
+    from .export import render
+    try:
+        data, doc = render(kind, ref_id, format)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    name = doc["filename"][format]
+    return Response(data, media_type=("text/markdown; charset=utf-8"
+                                      if format == "md" else "application/pdf"),
+                    headers={"Content-Disposition":
+                             f"attachment; filename*=UTF-8''{quote(name)}"})
+
+
+@app.post("/api/export/{kind}/{ref_id}")
+def api_export_save(kind: str, ref_id: int, format: str = "md") -> dict[str, Any]:
+    """Write the export into the export folder and return its path."""
+    from .export import save
+    try:
+        return save(kind, ref_id, format)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (ValueError, OSError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+class RevealIn(BaseModel):
+    path: str = ""
+
+
+@app.post("/api/export/reveal")
+def api_export_reveal(body: RevealIn) -> dict[str, Any]:
+    from .export import export_dir, reveal
+    target = body.path or str(export_dir())
+    export_dir().mkdir(parents=True, exist_ok=True)
+    return {"ok": reveal(target)}
+
+
+class ExportDirIn(BaseModel):
+    path: str
+
+
+@app.get("/api/settings/export-dir")
+def api_get_export_dir() -> dict[str, Any]:
+    from .export import export_dir
+    return {"path": str(export_dir())}
+
+
+@app.post("/api/settings/export-dir")
+def api_set_export_dir(body: ExportDirIn) -> dict[str, Any]:
+    from pathlib import Path
+    p = Path(body.path.strip()).expanduser()
+    if not p.is_absolute():
+        raise HTTPException(400, "Give a full path, e.g. ~/Documents/Research")
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HTTPException(400, f"cannot use that folder: {exc}") from exc
+    set_setting("export_dir", str(p))
+    return {"ok": True, "path": str(p)}
+
+
+# --------------------------------------------------------------------------
+# appearance
+# --------------------------------------------------------------------------
+
+THEMES = ("auto", "light", "dark", "newspaper")
+
+
+class ThemeIn(BaseModel):
+    theme: str
+
+
+@app.get("/api/theme")
+def api_get_theme() -> dict[str, Any]:
+    return {"theme": get_setting("theme", "auto"), "themes": list(THEMES)}
+
+
+@app.post("/api/theme")
+def api_set_theme(body: ThemeIn) -> dict[str, Any]:
+    if body.theme not in THEMES:
+        raise HTTPException(400, f"unknown theme {body.theme!r}; have {list(THEMES)}")
+    set_setting("theme", body.theme)
+    return {"ok": True, "theme": body.theme}
+
+
+# --------------------------------------------------------------------------
+# third-party search services, used only once switched on
+# --------------------------------------------------------------------------
+
+class OptinIn(BaseModel):
+    key: str
+    on: bool
+
+
+@app.get("/api/optins")
+def api_optins() -> dict[str, Any]:
+    from .optins import status
+    return {"services": status()}
+
+
+@app.post("/api/optins")
+def api_set_optin(body: OptinIn) -> dict[str, Any]:
+    from .optins import set_enabled, status
+    try:
+        set_enabled(body.key, body.on)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "services": status()}
+
+
 # --------------------------------------------------------------------------
 # static dashboard
 # --------------------------------------------------------------------------
@@ -1104,5 +1353,5 @@ if UI_DIR.exists():
     app.mount("/static", StaticFiles(directory=UI_DIR), name="static")
 
     @app.get("/")
-    def index() -> FileResponse:
-        return FileResponse(UI_DIR / "index.html")
+    def index() -> HTMLResponse:
+        return HTMLResponse(_with_plugins(UI_DIR / "index.html"))

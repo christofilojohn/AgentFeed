@@ -252,7 +252,8 @@ async def discover(url: str, client: httpx.AsyncClient | None = None
                         break
 
         out = sorted(found.values(), key=lambda c: -c.entries)
-        if not out:
+        from .optins import enabled
+        if not out and enabled("duckduckgo"):
             # 4. No feed anywhere: offer a standing search scoped to the site,
             #    which is how feedless publishers are covered.
             host = urlparse(url).netloc.removeprefix("www.")
@@ -287,6 +288,7 @@ async def resolve_source(text: str) -> dict[str, Any]:
         return {"ok": False, "input": text,
                 "reason": ("Could not reach a site from that. Try the full "
                            "address, e.g. https://example.com")}
+    from .optins import enabled
     #  An agent feed beats a scrape, so it is looked for first and offered
     #  first when it exists.
     afp = await discover_afp(url)
@@ -300,5 +302,11 @@ async def resolve_source(text: str) -> dict[str, Any]:
             host = urlparse(url).netloc.removeprefix("www.")
             item["config"] = search_config_for(host)
         out.append(item)
+    if not out:
+        return {"ok": False, "input": text, "resolved_url": url,
+                "reason": ("That site publishes no feed. Turn on DuckDuckGo "
+                           "web search in Status to watch it anyway."
+                           if not enabled("duckduckgo") else
+                           "That site publishes no feed.")}
     return {"ok": True, "input": text, "resolved_url": url,
             "site_title": title, "candidates": out}

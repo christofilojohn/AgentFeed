@@ -730,6 +730,13 @@ def test_every_helper_the_dashboard_calls_is_defined():
         "clearReader", "leaveTopic", "leaveCollection", "toggleFilter",
         "handleClick", "pollRun", "toast", "openModal", "closeModal",
         "md", "inline", "esc",
+        #  screens that survive navigation, and everything hung off them
+        "mark", "dispatch", "saveListState", "typeBadge", "queryFilters",
+        "applyTheme", "setTheme", "exportBar", "doExport", "loadConnections",
+        "openNode", "showNode", "loadResearch", "renderResearchNav",
+        "showResearch", "loadFeeds", "readFeed", "showOnboarding",
+        "onboardStart", "onboardAdopt", "closeOnboarding", "runHooks",
+        "refreshOnbModel", "optinsHTML", "skippedHTML",
     }
     missing = sorted(required - defined)
     assert not missing, f"app.js no longer defines: {missing}"
@@ -744,3 +751,190 @@ def test_every_helper_the_dashboard_calls_is_defined():
                      and not re.search(r"\b(?:const|let|var)\s+" + c + r"\b", src)
                      and not re.search(r"\." + c + r"\(", src))
     assert not orphans, f"app.js calls undefined helpers: {orphans}"
+
+
+# --- Where an item came from --------------------------------------------------
+
+def test_every_kind_of_source_says_what_it_is():
+    from agentfeed.retrieval import source_type
+    assert source_type("rss") == ("rss", "RSS feed")
+    assert source_type("openalex")[0] == "academic"
+    assert source_type("search")[0] == "search"
+    #  A journal's own RSS feed is academic: the DOI says so.
+    assert source_type("rss", "10.1000/xyz")[0] == "academic"
+    #  An adapter nobody has labelled is still labelled, not blank.
+    assert source_type("something_new")[1]
+
+
+# --- The graph ------------------------------------------------------------------
+
+@pytest.fixture()
+def small_graph():
+    c = db.conn()
+    c.execute("INSERT OR IGNORE INTO sources(id,kind,name,url) VALUES "
+              "(9001,'rss','Graph Feed','https://graph.example/feed')")
+    c.execute("INSERT OR IGNORE INTO items(id,source_id,url,url_key,title) VALUES "
+              "(9001,9001,'https://graph.example/1','graph1','Acme buys Beta'),"
+              "(9002,9001,'https://graph.example/2','graph2','Acme and Beta merge')")
+    c.execute("INSERT OR IGNORE INTO tags VALUES (9001,'entity','acme_g',1),"
+              "(9002,'entity','acme_g',1),(9002,'entity','beta_g',1)")
+    c.execute("INSERT OR IGNORE INTO collection_items(collection_id,item_id) VALUES (1,9001)")
+    c.execute("INSERT INTO collection_answers(collection_id,question,answer,cited) "
+              "VALUES (1,'Who bought Beta?','{\"answer\":\"Acme.\",\"findings\":"
+              "[{\"statement\":\"Acme bought Beta\",\"item_ids\":[9001]}],"
+              "\"answered\":true}','[{\"id\":9001,\"headline\":\"Acme buys Beta\","
+              "\"url\":\"https://graph.example/1\",\"source\":\"Graph Feed\"}]')")
+    aid = c.execute("SELECT max(id) FROM collection_answers").fetchone()[0]
+    db.link_citations("answer_citations", "answer_id", aid, [9001, 424242])
+    c.commit()
+    yield aid
+    c.execute("DELETE FROM collection_answers WHERE id=?", (aid,))
+    c.execute("DELETE FROM items WHERE id IN (9001, 9002)")
+    c.execute("DELETE FROM sources WHERE id=9001")
+    c.commit()
+
+
+def test_an_item_reaches_everything_it_touches(small_graph):
+    from agentfeed.graph import neighbours
+    g = {e["rel"]: e["nodes"] for e in neighbours("item", 9001)["edges"]}
+    assert g["from"][0]["label"] == "Graph Feed"
+    assert g["from"][0]["source_type"] == "rss"
+    assert [n["id"] for n in g["mentions"]] == ["acme_g"]
+    assert [n["label"] for n in g["kept_in"]] == ["Favourites"]
+    assert [n["id"] for n in g["cited_by_answer"]] == [small_graph]
+    #  Related by a shared organisation, never by itself.
+    assert [n["id"] for n in g["related"]] == [9002]
+
+
+def test_citations_are_rows_and_skip_what_no_longer_exists(small_graph):
+    rows = db.conn().execute("SELECT item_id FROM answer_citations WHERE answer_id=?",
+                             (small_graph,)).fetchall()
+    assert [r[0] for r in rows] == [9001]      # 424242 never existed
+
+
+def test_an_unknown_node_type_is_refused():
+    from agentfeed.graph import neighbours
+    with pytest.raises(ValueError):
+        neighbours("planet", 1)
+
+
+# --- Exports ----------------------------------------------------------------------
+
+def test_export_names_sort_by_date_and_read_as_their_subject():
+    from agentfeed.export import filename, folder_name, slug
+    assert filename("answer", "a45", "What drives margins?", "2026-09-25 10:00", "pdf") \
+        == "2026-09-25_answer_what-drives-margins_a45.pdf"
+    assert slug("Ποιος αγόρασε;") == "ποιος-αγόρασε"      # not flattened to nothing
+    assert "/" not in folder_name("EV / Batteries: 2026")
+
+
+def test_an_answer_exports_with_numbered_resolvable_sources(small_graph):
+    from agentfeed.export import render
+    md, doc = render("answer", small_graph, "md")
+    text = md.decode()
+    assert text.startswith("---\n") and "type: \"answer\"" in text
+    assert "1. Acme bought Beta [1]" in text
+    assert "[1] **Acme buys Beta** — Graph Feed (RSS feed)" in text
+    assert "<https://graph.example/1>" in text
+    pdf, _ = render("answer", small_graph, "pdf")
+    assert pdf.startswith(b"%PDF")
+
+
+# --- Feeds in and out -----------------------------------------------------------
+
+def test_opml_round_trips_folders_as_tags():
+    from agentfeed.opml import parse_opml
+    feeds = parse_opml('<opml version="2.0"><body><outline text="Energy">'
+                       '<outline text="Grid" xmlUrl="https://grid.example/rss"/>'
+                       '</outline></body></opml>')
+    assert feeds == [{"name": "Grid", "url": "https://grid.example/rss",
+                      "site": "", "tags": ["Energy"]}]
+    with pytest.raises(ValueError):
+        parse_opml("not xml at all <")
+
+
+# --- Runtimes without schema-constrained decoding ---------------------------------
+
+def test_json_is_recovered_from_a_fenced_or_chatty_reply():
+    from agentfeed.llm import extract_json
+    assert extract_json('Sure!\n```json\n{"a": "}", "b": {"c": 1}}\n```') \
+        == '{"a": "}", "b": {"c": 1}}'
+    assert extract_json("no object here") == ""
+
+
+# --- Extensions ------------------------------------------------------------------
+
+def test_an_extension_adds_routes_ui_runtimes_and_model_choices():
+    """The public build knows nothing about any extension by name; everything
+    arrives through the hooks in plugins.py."""
+    import types
+
+    from fastapi import APIRouter
+    from fastapi.testclient import TestClient
+
+    from agentfeed import plugins, providers
+    from agentfeed.api import app
+
+    router = APIRouter()
+
+    @router.get("/api/ext-ping")
+    def ping() -> dict:
+        return {"pong": True}
+
+    ext = types.SimpleNamespace(
+        name="ext", router=router,
+        providers={"ext_rt": providers.Provider(
+            key="ext_rt", label="Ext runtime", base_url="http://127.0.0.1:1/v1",
+            context_hint="")},
+        detect_first=["ext_rt"],
+        llm_resolve=lambda key, available: {"chat": "m"} if key == "ext_rt" else None,
+        llm_label=lambda key: "Ext model" if key == "ext_rt" else None)
+    plugins.register(ext)
+    app.include_router(router)
+    try:
+        assert providers.DETECT_ORDER[0] == "ext_rt"
+        assert plugins.first("llm_resolve", "ext_rt", []) == {"chat": "m"}
+        assert plugins.first("llm_resolve", "ollama", []) is None
+        with TestClient(app) as client:
+            assert client.get("/api/ext-ping").json() == {"pong": True}
+    finally:
+        plugins.plugins().remove(ext)
+        providers.DETECT_ORDER.remove("ext_rt")
+        providers.PROVIDERS.pop("ext_rt")
+
+
+def test_a_broken_extension_never_takes_the_app_down(monkeypatch):
+    from agentfeed import plugins
+    monkeypatch.setattr(plugins, "_loaded", None)
+    monkeypatch.setenv("AGENTFEED_PLUGINS", "no_such_module_anywhere:plugin")
+    assert plugins.plugins() == [] or all(
+        getattr(p, "name", "") != "no_such_module_anywhere" for p in plugins.plugins())
+    monkeypatch.setattr(plugins, "_loaded", None)
+
+
+# --- Third-party search services are opt-in --------------------------------------
+
+def test_google_news_and_duckduckgo_are_off_until_switched_on():
+    import asyncio
+
+    import httpx
+
+    from agentfeed import optins
+    from agentfeed.scout import probe_news_feed, probe_web_watch
+    from agentfeed.sources.search import fetch_search
+    for k in optins.OPTINS:
+        optins.set_enabled(k, False)
+    assert not any(x["enabled"] for x in optins.status())
+
+    async def run():
+        async with httpx.AsyncClient() as c:
+            #  No network call is made: each returns before touching it.
+            assert await probe_news_feed({"name": "x"}, ["copper"], [], c) is None
+            assert await probe_web_watch({"name": "x"}, ["copper"], [], c) is None
+            assert await fetch_search(c, "", {"query": "copper"}) == []
+    asyncio.run(run())
+    optins.set_enabled("google_news", True)
+    assert optins.enabled("google_news")
+    optins.set_enabled("google_news", False)
+    with pytest.raises(ValueError):
+        optins.set_enabled("bing", True)

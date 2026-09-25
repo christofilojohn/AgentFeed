@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     token: str = ""
     max_tokens_per_sync: int = 32000
 
+    #  --- exports ---
+    #  Where Markdown and PDF exports are written, one folder per scope.
+    #  Overridable from the app (app_settings.export_dir).
+    export_dir: Path = Path.home() / "Documents" / "AgentFeed Exports"
+
     #  --- server ---
     host: str = "127.0.0.1"
     port: int = 8770

@@ -4,6 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 uv pip install -q -e '.[desktop]'
 rm -rf build dist
+# The licences every bundled dependency asks to be shipped with it.
+.venv/bin/python scripts/third_party_licenses.py "agentfeed[desktop]" -o THIRD_PARTY_LICENSES.txt
 .venv/bin/pyinstaller --noconfirm --clean packaging/agentfeed.spec
 echo
 echo "Built: dist/AgentFeed.app"
