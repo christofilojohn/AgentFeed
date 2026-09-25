@@ -3,6 +3,8 @@ name = "agentfeed"
 version = "0.1.0"
 description = "AgentFeed — a news reader and protocol, with a local open model behind it."
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "httpx>=0.27",
     "feedparser>=6.0.11",

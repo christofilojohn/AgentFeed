@@ -48,7 +48,7 @@ def licence_of(dist) -> str:
     return (md.get("License-Expression")
             or next((c.split("::")[-1].strip() for c in md.get_all("Classifier") or []
                      if c.startswith("License ::")), "")
-            or (md.get("License") or "").splitlines()[0][:80]
+            or next(iter((md.get("License") or "").splitlines()), "")[:80]
             or "see licence text")
 
 
